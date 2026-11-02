@@ -36,6 +36,17 @@ const finishOp = (workerId: WorkerId, runId: string) => OperationId.make(`finish
 
 type Failure = OutboxFailure | WorkerUnavailable
 
+/**
+ * The plan's last state says how the run ended: a completed run ticks steps the worker forgot to tick, and a run
+ * that failed, stopped or was interrupted marks its unfinished steps as errors, so nothing keeps spinning.
+ */
+export const finalTasks = (tasks: ReadonlyArray<PlanTask>, outcome: RunOutcome): ReadonlyArray<PlanTask> =>
+  tasks.map((task) =>
+    task.status === "pending" || task.status === "in_progress"
+      ? { ...task, status: outcome === "completed" ? ("complete" as const) : ("error" as const) }
+      : task,
+  )
+
 /** What a run ending looks like to core: the runtime's status and the plan as the tracker last drew it. */
 export interface RunEnd {
   readonly status: RunStatus
@@ -377,7 +388,7 @@ export class Workers extends Context.Service<
               yield* outbox.enqueue(finishOp(workerId, status.runId), "plan_finish", {
                 plan: worker.planMessage,
                 title: worker.brief.title,
-                tasks: end.tasks,
+                tasks: finalTasks(end.tasks, outcome),
                 outcome,
                 answer: answer === "" ? null : answer,
               })

@@ -275,7 +275,7 @@ describe("Slack plans", () => {
         expect(fake.calls.post).toHaveLength(0)
         expect(fake.calls.update).toHaveLength(1)
         expect(planOf(fake.calls.update[0])).toMatchObject({
-          title: `${initial.title} — ${outcome}`,
+          title: initial.title,
           tasks: [{ status: "complete" }],
         })
         expect(blocksOf(fake.calls.update[0])[1]).toEqual({
@@ -283,7 +283,7 @@ describe("Slack plans", () => {
           elements: [{ type: "rich_text_section", elements: [{ type: "text", text: finish.answer }] }],
         })
         expect(fake.calls.update[0]).toMatchObject({
-          text: `${initial.title} — ${outcome}\n\n${finish.answer}`,
+          text: `${initial.title}\n\n${finish.answer}`,
         })
       }).pipe(Effect.provide(fake.layer))
     },
@@ -314,7 +314,8 @@ describe("Slack plans", () => {
         yield* Fiber.join(done)
         yield* channel.upsertPlan(update("Stale progress"))
         expect(fake.calls.update).toHaveLength(1)
-        expect(planOf(fake.calls.update[0]).title).toContain("completed")
+        // The final state won: the stale progress title never replaced it.
+        expect(planOf(fake.calls.update[0]).title).not.toContain("Stale progress")
       }).pipe(Effect.provide(fake.layer))
     },
   )

@@ -198,8 +198,9 @@ export const SlackChannelLayer = (
           yield* plans.posted(message)
           return message
         }),
-        finishPlan: Effect.fn("Slack.finishPlan")(function* ({ plan, title, tasks, outcome, answer }) {
-          const content = yield* planContent(`${title} — ${outcome}`, tasks, answer)
+        finishPlan: Effect.fn("Slack.finishPlan")(function* ({ plan, title, tasks, answer }) {
+          // The task icons tell how the run ended (core marks unfinished steps), so the title stays as it is.
+          const content = yield* planContent(title, tasks, answer)
           yield* plans.edit(plan, content, true)
         }),
       })
