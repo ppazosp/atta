@@ -59,7 +59,10 @@ export interface OutboxEntry {
 export class Store extends Context.Service<
   Store,
   {
-    /** Runs `effect` in one transaction: every write inside lands, or none does. */
+    /**
+     * Runs `effect` in one transaction: every write inside lands, or none does. Inside another transaction it is
+     * a savepoint: if it fails, only its own writes are undone, and the outer transaction goes on.
+     */
     transaction<A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E | StoreError, R>
 
     readonly events: {
