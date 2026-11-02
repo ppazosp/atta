@@ -46,6 +46,7 @@ const Payloads = {
     repo: Schema.String,
     title: Schema.String,
     why: Schema.String,
+    brief: Schema.String,
   }),
   approval_close: Schema.Struct({ message: MessageRef, text: Schema.String }),
 } satisfies Record<OutboxKind, Schema.Top>

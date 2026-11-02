@@ -21,6 +21,33 @@ const ApprovalHistory = Schema.Struct({
   messages: Schema.Array(Schema.Struct({ ts: Schema.NonEmptyString, blocks: Schema.Array(ApprovalBlock) })),
 })
 const outcomeBlockId = "atta_approval_outcome"
+// Slack refuses a section with more than 3000 characters of text.
+const SECTION_LIMIT = 3000
+
+/**
+ * The brief as quoted sections, in full: the owner approves exactly what the worker will run. Escaping can
+ * lengthen a line, so lines are packed into as many sections as they need.
+ */
+export const briefSections = (brief: string): ReadonlyArray<string> => {
+  const sections: Array<string> = []
+  let current = ""
+  for (const line of escapeMrkdwn(brief).split("\n")) {
+    let quoted = `>${line}`
+    while (quoted.length > SECTION_LIMIT) {
+      if (current !== "") sections.push(current)
+      current = ""
+      sections.push(quoted.slice(0, SECTION_LIMIT))
+      quoted = `>${quoted.slice(SECTION_LIMIT)}`
+    }
+    const next = current === "" ? quoted : `${current}\n${quoted}`
+    if (next.length > SECTION_LIMIT) {
+      sections.push(current)
+      current = quoted
+    } else current = next
+  }
+  if (current !== "") sections.push(current)
+  return sections
+}
 type Blocks = Extract<ChatUpdateArguments, { blocks: unknown }>["blocks"]
 
 export const makeApprovalWriter = (
@@ -33,6 +60,7 @@ export const makeApprovalWriter = (
     repo,
     title,
     why,
+    brief,
     operationId,
   }) {
     const dm = yield* call(
@@ -47,16 +75,21 @@ export const makeApprovalWriter = (
     )
     const section = `*${escapeMrkdwn(title)}*\n${escapeMrkdwn(why)}`
     const context = `${escapeMrkdwn(repo)} · <${link.permalink}|View thread>`
+    const quotedBrief = briefSections(brief)
     // oxlint-disable unicorn/require-post-message-target-origin -- This is Slack's Web API.
     const posted = yield* call(
       "chat.postMessage",
       () =>
         client.chat.postMessage({
           channel: dm.channel.id,
-          text: `${section}\n${context}`,
+          text: [section, ...quotedBrief, context].join("\n"),
           metadata: metadata(operationId),
           blocks: [
             { type: "section", text: { type: "mrkdwn", text: section } },
+            ...quotedBrief.map((text) => ({
+              type: "section" as const,
+              text: { type: "mrkdwn" as const, text },
+            })),
             { type: "context", elements: [{ type: "mrkdwn", text: context }] },
             {
               type: "actions",

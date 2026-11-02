@@ -37,3 +37,16 @@ export class RouterTools extends Context.Service<
     readonly tools: ReadonlyArray<AnyRouterTool>
   }
 >()("atta/ports/RouterTools") {}
+
+/**
+ * A second router conversation, only for messages observed in watched channels. Its text comes from anyone, so
+ * it runs apart from the router, with tools that can propose work but never post, steer or start it.
+ */
+export class ObserverEngine extends Context.Service<ObserverEngine, RouterEngine["Service"]>()(
+  "atta/ports/ObserverEngine",
+) {}
+
+/** What the observer runs with. Core provides it next to `RouterTools`. */
+export class ObserverTools extends Context.Service<ObserverTools, RouterTools["Service"]>()(
+  "atta/ports/ObserverTools",
+) {}

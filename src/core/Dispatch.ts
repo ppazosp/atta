@@ -3,7 +3,7 @@ import type { Event } from "./domain/event.ts"
 import { OperationId, WorkerId, type EventId } from "./domain/ids.ts"
 import { isStopCommand } from "./domain/routing.ts"
 import { threadKey, type ThreadKey } from "./domain/thread.ts"
-import { RouterEngine } from "../ports/RouterEngine.ts"
+import { ObserverEngine, RouterEngine } from "../ports/RouterEngine.ts"
 import { Store, type DeliveryTarget } from "../ports/Store.ts"
 import { reactionOp } from "./Intake.ts"
 import { Outbox, Results } from "./Outbox.ts"
@@ -32,6 +32,7 @@ export class Dispatch extends Context.Service<
       const store = yield* Store
       const outbox = yield* Outbox
       const engine = yield* RouterEngine
+      const observer = yield* ObserverEngine
       const workers = yield* Workers
       // Waits for the router's answers outlive a single delivery; they belong to the service's scope.
       const scope = yield* Effect.scope
@@ -89,10 +90,13 @@ export class Dispatch extends Context.Service<
         )
       })
 
-      /** A watched-channel message: the router judges it. Nothing is posted and nothing reacts in the channel. */
+      /**
+       * A watched-channel message goes to the observer, never to the router: its text comes from anyone, and the
+       * observer's tools can only propose work. Nothing is posted and nothing reacts in the channel.
+       */
       const observe = Effect.fn("Dispatch.observe")(function* (event: Event) {
         if (event._tag !== "UserMessage") return
-        yield* engine.submit({ requestId: event.id, content: renderObservation(event), whenBusy: "queue" })
+        yield* observer.submit({ requestId: event.id, content: renderObservation(event), whenBusy: "queue" })
       })
 
       /**

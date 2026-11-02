@@ -29,6 +29,7 @@ export type ChannelCall =
       readonly title: string
       readonly repo: string
       readonly why: string
+      readonly brief: string
       readonly message: MessageRef
     }
   | { readonly _tag: "closeApproval"; readonly message: MessageRef; readonly text: string }
@@ -80,11 +81,11 @@ export const FakeChannelLayer = Layer.effectContext(
             return Option.none()
           }),
         ),
-      requestApproval: ({ ownerUserId, proposalId, title, repo, why }) =>
+      requestApproval: ({ ownerUserId, proposalId, title, repo, why, brief }) =>
         Effect.gen(function* () {
           // The owner's DM, as Slack would open it.
           const message = nextMessage("T01", `D-${ownerUserId}`)
-          yield* record({ _tag: "requestApproval", proposalId, title, repo, why, message })
+          yield* record({ _tag: "requestApproval", proposalId, title, repo, why, brief, message })
           return message
         }),
       closeApproval: ({ message, text }) => record({ _tag: "closeApproval", message, text }),

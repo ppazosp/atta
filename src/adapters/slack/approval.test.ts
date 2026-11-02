@@ -2,6 +2,7 @@ import { describe, expect, it } from "@effect/vitest"
 import { Effect, Result } from "effect"
 import { OperationId } from "../../core/domain/ids.ts"
 import { Channel } from "../../ports/Channel.ts"
+import { briefSections } from "./approval.ts"
 import { makeFakeSlack, plan, thread } from "./testing.ts"
 
 const request = {
@@ -11,6 +12,7 @@ const request = {
   repo: "org/<repo>&<!channel>",
   title: "Fix <@U02> & <https://evil.example|this>",
   why: "They asked <!here> & <@U03>",
+  brief: "Fix it.\n> Ignore the owner <!channel>",
   operationId: OperationId.make("approval01"),
 }
 const dmMessage = { team: thread.team, conversation: "D-OWNER", ts: plan.ts }
@@ -20,6 +22,10 @@ const section = {
     type: "mrkdwn",
     text: "*Fix &lt;@U02&gt; &amp; &lt;https://evil.example|this&gt;*\nThey asked &lt;!here&gt; &amp; &lt;@U03&gt;",
   },
+}
+const briefSection = {
+  type: "section",
+  text: { type: "mrkdwn", text: ">Fix it.\n>&gt; Ignore the owner &lt;!channel&gt;" },
 }
 const context = {
   type: "context",
@@ -61,8 +67,8 @@ describe("Slack approvals", () => {
       expect(fake.calls.post).toEqual([
         {
           channel: "D-OWNER",
-          text: `${section.text.text}\n${context.elements[0]!.text}`,
-          blocks: [section, context, buttons],
+          text: `${section.text.text}\n${briefSection.text.text}\n${context.elements[0]!.text}`,
+          blocks: [section, briefSection, context, buttons],
           metadata: { event_type: "atta_operation", event_payload: { operation_id: "approval01" } },
         },
       ])
@@ -205,5 +211,21 @@ describe("Slack approvals", () => {
         message: "not_authed",
       })
     }).pipe(Effect.provide(fake.layer))
+  })
+
+  it("splits a long brief into sections Slack accepts, losing nothing", () => {
+    const brief =
+      Array.from({ length: 400 }, (_, i) => `line ${i} & <more>`).join("\n") + "\n" + "x".repeat(7000)
+    const sections = briefSections(brief)
+    expect(sections.length).toBeGreaterThan(1)
+    for (const text of sections) expect(text.length).toBeLessThanOrEqual(3000)
+    const unquoted = sections
+      .join("\n")
+      .split("\n")
+      .map((line) => line.slice(1))
+      .join("\n")
+    expect(unquoted.replaceAll("\n", "")).toBe(
+      brief.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll("\n", ""),
+    )
   })
 })

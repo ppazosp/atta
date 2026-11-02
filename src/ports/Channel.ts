@@ -54,6 +54,8 @@ export class Channel extends Context.Service<
       readonly repo: string
       readonly title: string
       readonly why: string
+      /** Shown in full: the owner approves exactly what the worker will run. */
+      readonly brief: string
       readonly operationId: OperationId
     }): Effect.Effect<MessageRef, ChannelError>
     /** Replaces the buttons with the outcome, so a decided proposal cannot be clicked again. */

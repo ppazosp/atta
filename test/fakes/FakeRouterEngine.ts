@@ -1,6 +1,13 @@
 import { Context, Deferred, Effect, Layer, Ref, Schema } from "effect"
 import { ToolError } from "../../src/core/domain/tool.ts"
-import { EngineError, RouterEngine, RouterTools, type Settlement } from "../../src/ports/RouterEngine.ts"
+import {
+  EngineError,
+  ObserverEngine,
+  ObserverTools,
+  RouterEngine,
+  RouterTools,
+  type Settlement,
+} from "../../src/ports/RouterEngine.ts"
 
 export interface Submission {
   readonly requestId: string
@@ -23,14 +30,18 @@ export class FakeRouterControl extends Context.Service<
   }
 >()("atta/test/FakeRouterControl") {}
 
-export const FakeRouterEngineLayer = Layer.effectContext(
+/** The same control for the observer, which runs the observer's tools. */
+export class FakeObserverControl extends Context.Service<FakeObserverControl, FakeRouterControl["Service"]>()(
+  "atta/test/FakeObserverControl",
+) {}
+
+const makeFakeEngine = (tools: RouterTools["Service"]["tools"]) =>
   Effect.gen(function* () {
-    const { tools } = yield* RouterTools
     const submissions = yield* Ref.make<ReadonlyArray<Submission>>([])
     const settlements = yield* Ref.make<ReadonlyMap<string, Deferred.Deferred<Settlement>>>(new Map())
     const callCount = yield* Ref.make(0)
 
-    const engine = RouterEngine.of({
+    const engine: RouterEngine["Service"] = {
       submit: (input) =>
         Effect.gen(function* () {
           if ((yield* Ref.get(settlements)).has(input.requestId)) return
@@ -46,9 +57,9 @@ export const FakeRouterEngineLayer = Layer.effectContext(
           }
           return yield* Deferred.await(deferred)
         }),
-    })
+    }
 
-    const control = FakeRouterControl.of({
+    const control: FakeRouterControl["Service"] = {
       submissions: Ref.get(submissions),
       callTool: (name, args, callId) =>
         Effect.gen(function* () {
@@ -66,7 +77,20 @@ export const FakeRouterEngineLayer = Layer.effectContext(
           if (!deferred) return yield* Effect.die(`unknown request ${requestId}`)
           yield* Deferred.succeed(deferred, settlement)
         }),
-    })
+    }
+    return { engine, control }
+  })
+
+export const FakeRouterEngineLayer = Layer.effectContext(
+  Effect.gen(function* () {
+    const { engine, control } = yield* makeFakeEngine((yield* RouterTools).tools)
     return Context.make(RouterEngine, engine).pipe(Context.add(FakeRouterControl, control))
+  }),
+)
+
+export const FakeObserverEngineLayer = Layer.effectContext(
+  Effect.gen(function* () {
+    const { engine, control } = yield* makeFakeEngine((yield* ObserverTools).tools)
+    return Context.make(ObserverEngine, engine).pipe(Context.add(FakeObserverControl, control))
   }),
 )

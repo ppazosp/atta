@@ -5,10 +5,10 @@ atta can read channels you add it to and propose work it finds there. It never p
 ## How it works
 
 1. You add atta to a channel and put the channel ID in `watchedChannels` in `atta.config.ts`.
-2. Every message in that channel, from anyone, reaches the router as an observation. The router sees the text quoted as untrusted, with a note that it is not a request.
-3. Most observations need nothing, so the router ends its turn without calling a tool.
-4. When a message asks for clear, worthwhile work in a known repository, the router calls `propose_work` with a title, a brief and a reason.
-5. You get a direct message with the title, the reason, the repository, a link to the thread, and Start and Skip buttons.
+2. Every message in that channel, from anyone, goes to the observer: a second router conversation, on the same model, kept apart from the router. It sees the text quoted as untrusted, with a note that it is not a request.
+3. Most observations need nothing, so the observer ends its turn without calling a tool.
+4. When a message asks for clear, worthwhile work in a known repository, the observer calls `propose_work` with a title, a reason and a brief.
+5. You get a direct message with the title, the reason, the whole brief, the repository, a link to the thread, and Start and Skip buttons.
 6. On Start, atta opens that channel thread and starts the worker there. Its plan and result appear in the thread, as they do for work you ask for directly.
 7. On Skip, nothing runs. Either way, the buttons are replaced by the outcome ("Started: …", "Skipped: …" or "Could not start: …").
 
@@ -16,6 +16,8 @@ atta can read channels you add it to and propose work it finds there. It never p
 
 These rules hold in the code and are covered by tests in `test/core.test.ts` and `src/core/domain/routing.test.ts`:
 
+- channel text never reaches the router: the observer has only `propose_work`, `list_workers` and `recall`, so text written to trick it can at most ask you for approval
+- you approve exactly what runs: the direct message shows the whole brief, and a brief too long to show (over 2,000 characters) is refused
 - atta posts and reacts only in threads you started with it, or that you approved with Start
 - a message from anyone else is only ever observed: it never reaches a worker, even in a thread where a worker runs
 - only your click counts; anyone else's click is dropped
@@ -40,4 +42,5 @@ These were decided without you and are easy to change:
 - The router decides what is worth proposing from its instructions alone. There is no rate limit or "already proposed" check beyond asking the router not to propose the same work twice.
 - A proposal does not expire. A Start click days later still starts the worker.
 - After Start, the worker's result is posted in the channel thread, where the colleague who asked can see it. Replies there from others are observed, not passed to the worker.
-- Every observed message costs one router turn. In a busy channel that is many turns; a cheaper first filter could come later.
+- Every observed message costs one observer turn. In a busy channel that is many turns; a cheaper model or a first filter could come later.
+- The observer uses the router's model and effort. It could have its own settings.
