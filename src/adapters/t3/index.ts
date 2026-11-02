@@ -126,6 +126,8 @@ const stepOf = (item: Item): Step | null =>
         detail: item.text || null,
       }
 
+const closeQuietly = (client: Client) => Effect.tryPromise(() => client.close()).pipe(Effect.ignore)
+
 const describeCause = (cause: unknown) =>
   (cause instanceof Error ? cause.message : typeof cause === "string" ? cause : String(cause)).slice(0, 500)
 
@@ -179,7 +181,6 @@ export const T3RuntimeLayer = (input: T3RuntimeConfig, options: Options = {}) =>
             message: "Cannot connect to T3 MCP. Check the endpoint and sign in with full access.",
           }),
       })
-      const closeQuietly = (client: Client) => Effect.tryPromise(() => client.close()).pipe(Effect.ignore)
       const connection = yield* Ref.make(yield* open)
       yield* Effect.addFinalizer(() => Ref.get(connection).pipe(Effect.flatMap(closeQuietly)))
       const reconnecting = yield* Semaphore.make(1)
