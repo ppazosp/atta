@@ -1,0 +1,16 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": ["src/app/main.ts"],
+  "project": ["src/**/*.ts", "test/**/*.ts"],
+  "ignore": [".repos/**"],
+  "ignoreDependencies": [
+    "@earendil-works/pi-durable",
+    "@earendil-works/pi-ai",
+    "@earendil-works/chord",
+    "@earendil-works/pi-schema",
+    "@effect/sql-sqlite-node",
+    "@modelcontextprotocol/sdk",
+    "@slack/bolt",
+    "@slack/web-api"
+  ]
+}

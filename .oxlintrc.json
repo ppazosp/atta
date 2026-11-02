@@ -1,0 +1,33 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "categories": { "correctness": "error", "suspicious": "warn" },
+  "ignorePatterns": [".repos/**", "node_modules/**"],
+  "overrides": [
+    {
+      "files": ["src/core/**", "src/ports/**"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": ["**/adapters/**", "**/app/**", "**/mcp/**"],
+                "message": "Core and ports never import adapters, the app or the MCP server."
+              },
+              {
+                "group": [
+                  "@slack/*",
+                  "@earendil-works/*",
+                  "@modelcontextprotocol/*",
+                  "@effect/sql-*",
+                  "@effect/platform-node"
+                ],
+                "message": "Core and ports stay free of vendor libraries. Put this in an adapter."
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

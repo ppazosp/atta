@@ -1,0 +1,144 @@
+// Atta architecture: core with interfaces (ports), adapters, T3 Code for workers, Pi Durable for the router.
+// Render: dot -Tsvg architecture.dot -o architecture.svg && rsvg-convert -z 1.6 architecture.svg -o architecture.png
+digraph atta {
+  graph [rankdir=TB, fontname="Helvetica", nodesep=0.28, ranksep=0.5, pad=0.3, bgcolor="white", newrank=true,
+         label=<<b>Atta architecture</b><br/><font point-size="12" color="#666666">solid = v0   ·   dashed = later   ·   core never imports an adapter   ·   all on your Mac</font>>, labelloc=t, fontsize=20];
+  node  [shape=box, style="rounded,filled", fontname="Helvetica", fontsize=11, penwidth=1.2, margin="0.14,0.07"];
+  edge  [fontname="Helvetica", fontsize=9, color="#555555", arrowsize=0.7];
+
+  // ---------- Outside world ----------
+  subgraph cluster_ext {
+    label=<<b>Outside</b>>; style="rounded,filled"; color="#bbbbbb"; fillcolor="#f5f5f5";
+    node [fillcolor="#ffffff", color="#888888"];
+    slack    [label=<<b>Slack</b>>];
+    github   [label=<<b>GitHub</b>>, style="rounded,filled,dashed"];
+    email    [label=<<b>Email</b>>, style="rounded,filled,dashed"];
+    youragents [label=<<b>Your agents</b><br/><font point-size="9">Claude Code · Codex · anything with MCP</font>>];
+  }
+
+  // ---------- Channel adapters ----------
+  subgraph cluster_channels {
+    label=<<b>Channel adapters</b>  <font point-size="10">two-way: events in · reply, react, progress out</font>>;
+    style="rounded,filled"; color="#2f855a"; fillcolor="#effaf3";
+    node [fillcolor="#ffffff", color="#2f855a"];
+    ch_slack  [label=<<b>Slack</b><br/><font point-size="9">Bolt, Socket Mode · reactions<br/>plan message via chat.update · answer at the end</font>>];
+    ch_clock  [label=<<b>Clock</b><br/><font point-size="9">scheduled triggers from config → events</font>>];
+    ch_github [label=<<b>GitHub</b><br/><font point-size="9">webhooks · PR comments out</font>>, style="rounded,filled,dashed"];
+    ch_email  [label=<<b>Email</b><br/><font point-size="9">replies out</font>>, style="rounded,filled,dashed"];
+  }
+
+  // ---------- Core ----------
+  subgraph cluster_core {
+    label=<<b>Atta core</b>  <font point-size="10">domain logic only · Effect services</font>>;
+    style="rounded,filled"; color="#2b6cb0"; fillcolor="#ebf4ff";
+    node [fillcolor="#ffffff", color="#2b6cb0"];
+
+    p_channel [label=<<b>Channel port</b>>, shape=cds, fillcolor="#dbeafe"];
+    filter    [label=<<b>Filter</b><br/><font point-size="9">fast path in code: duplicates · bursts<br/>v0: only your own messages</font>>];
+    dispatch  [label=<<b>Dispatch</b><br/><font point-size="9">thread has a worker → straight to it<br/>otherwise → router</font>>];
+    router    [label=<<b>Router</b><br/><font point-size="9">lean · no shell · only Atta tools<br/>prompt · context · uses memory<br/>gpt-6.1-terra · medium</font>>, penwidth=2.2, fillcolor="#fffbea", color="#b7791f"];
+    api       [label=<<b>Atta tools</b><br/><font point-size="9">start / message / stop worker · reply · react<br/>subscribe(thread, worker) · ask · remember (later)</font>>];
+    sessions  [label=<<b>Worker manager</b><br/><font point-size="9">launch: sol · xhigh · own worktree · brief<br/>send · steer · stop</font>>];
+    tracker   [label=<<b>Worker tracker</b><br/><font point-size="9">reads each worker's steps<br/>→ Slack plan updates · finished event</font>>];
+    watchdog  [label=<<b>Watchdog</b><br/><font point-size="9">stuck · silent · auto-resubmit</font>>, style="rounded,filled,dashed"];
+
+    p_engine  [label=<<b>Router engine port</b>>, shape=cds, fillcolor="#dbeafe"];
+    p_runtime [label=<<b>Runtime port</b>>, shape=cds, fillcolor="#dbeafe"];
+    p_memory  [label=<<b>Memory port</b>>, shape=cds, fillcolor="#dbeafe"];
+    p_store   [label=<<b>Store port</b>>, shape=cds, fillcolor="#dbeafe"];
+  }
+
+  // ---------- App ----------
+  subgraph cluster_app {
+    label=<<b>App</b>  <font point-size="10">config · wiring (Layers) · one process</font>>;
+    style="rounded,filled"; color="#4a5568"; fillcolor="#f7fafc";
+    node [fillcolor="#ffffff", color="#4a5568"];
+    mcpserver [label=<<b>Atta MCP server</b><br/><font point-size="9">localhost · same tools, scoped per caller<br/>workers: ask · report   ·   your agents: more</font>>, penwidth=2];
+  }
+
+  // ---------- Adapters ----------
+  subgraph cluster_adapters {
+    label=<<b>Adapters</b>>; style="rounded,filled"; color="#2c7a7b"; fillcolor="#e6fffa";
+    node [fillcolor="#ffffff", color="#2c7a7b"];
+    eng_pi    [label=<<b>Pi Durable</b><br/><font point-size="9">router conversation · queue · steer<br/>crash recovery · compaction · own SQLite</font>>, penwidth=2, fillcolor="#fffbea", color="#b7791f"];
+    eng_codex [label=<<b>Codex app-server</b><br/><font point-size="9">fallback engine</font>>, style="rounded,filled,dashed"];
+    rt_t3     [label=<<b>T3 runtime</b><br/><font point-size="9">MCP client · OAuth, full access<br/>launch · send/steer · read steps</font>>, penwidth=2];
+    rt_sdk    [label=<<b>Other runtime</b><br/><font point-size="9">Codex / Claude SDK …</font>>, style="rounded,filled,dashed"];
+    mem_none  [label=<<b>No memory</b><br/><font point-size="9">v0 placeholder</font>>];
+    mem_real  [label=<<b>Memory system</b><br/><font point-size="9">your design</font>>, style="rounded,filled,dashed"];
+    st_sqlite [label=<<b>SQLite store</b><br/><font point-size="9">source of truth: events · threads<br/>subscriptions · workers · deliveries</font>>, shape=cylinder, fillcolor="#e6fffa"];
+  }
+
+  // ---------- T3 Code ----------
+  subgraph cluster_t3 {
+    label=<<b>T3 Code</b>  <font point-size="10">unchanged · pinned nightly · workers only</font>>;
+    style="rounded,filled"; color="#6b46c1"; fillcolor="#f3efff";
+    node [fillcolor="#ffffff", color="#6b46c1"];
+    t3mcp   [label=<<b>T3 MCP endpoint</b>>];
+    workers [label=<<b>Worker threads</b><br/><font point-size="9">gpt-6.1-sol · xhigh · own worktree each<br/>your ~/.codex: your MCPs, plugins, skills<br/>throwaway · no memory</font>>, penwidth=2];
+    t3app   [label=<<b>T3 app</b><br/><font point-size="9">console</font>>];
+  }
+
+  subgraph cluster_vendor {
+    label=<<b>OpenAI</b>>; style="rounded,filled"; color="#999999"; fillcolor="#f5f5f5";
+    openai [label=<<b>ChatGPT subscription</b><br/><font point-size="9">router and workers share it</font>>, fillcolor="#ffffff", color="#888888"];
+  }
+
+  // Outside ↔ channels
+  slack  -> ch_slack  [dir=both];
+  github -> ch_github [dir=both, style=dashed];
+  email  -> ch_email  [dir=both, style=dashed];
+
+  // Channels → core
+  ch_slack  -> p_channel [dir=both];
+  ch_clock  -> p_channel;
+  ch_github -> p_channel [dir=both, style=dashed];
+  ch_email  -> p_channel [dir=both, style=dashed];
+
+  // Core flow
+  p_channel -> filter   [label="events"];
+  filter    -> dispatch;
+  dispatch  -> router   [label="new work"];
+  dispatch  -> sessions [label="follow-up\n(pass-through)"];
+  router    -> api      [label="calls", color="#b7791f", fontcolor="#b7791f"];
+  router    -> p_engine [label="model turns", color="#b7791f", fontcolor="#b7791f"];
+  api       -> sessions;
+  api       -> p_channel [constraint=false, label="reply · react"];
+  api       -> p_store;
+  api       -> p_memory  [style=dashed];
+  sessions  -> p_runtime;
+  tracker   -> p_runtime [dir=back, label="steps"];
+  tracker   -> p_channel [constraint=false, label="plan updates"];
+  tracker   -> dispatch  [constraint=false, label="worker finished"];
+  watchdog  -> p_runtime [style=dashed];
+  dispatch  -> p_store   [style=dotted, arrowhead=none];
+
+  // Ports → adapters
+  p_engine  -> eng_pi;
+  p_engine  -> eng_codex [style=dashed];
+  p_runtime -> rt_t3;
+  p_runtime -> rt_sdk    [style=dashed];
+  p_memory  -> mem_none;
+  p_memory  -> mem_real  [style=dashed];
+  p_store   -> st_sqlite;
+
+  // MCP server: the same tools for anyone outside the process
+  mcpserver  -> api      [label="calls", color="#2b6cb0", fontcolor="#2b6cb0"];
+  workers    -> mcpserver [constraint=false, label="ask · report", color="#2b6cb0", fontcolor="#2b6cb0"];
+  youragents -> mcpserver [constraint=false, color="#2b6cb0"];
+
+  // T3
+  rt_t3   -> t3mcp   [label="OAuth"];
+  t3mcp   -> workers;
+  t3app   -> workers [style=dotted, color="#999999"];
+
+  // Models
+  eng_pi  -> openai  [style=dashed, arrowhead=none, color="#999999"];
+  workers -> openai  [style=dashed, arrowhead=none, color="#999999"];
+
+  // Layout anchors (invisible)
+  { rank=same; p_engine; p_runtime; p_memory; p_store; }
+  { rank=same; eng_pi; eng_codex; rt_t3; rt_sdk; mem_none; mem_real; st_sqlite; }
+  router -> sessions [style=invis];
+  { rank=same; sessions; tracker; watchdog; }
+}

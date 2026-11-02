@@ -1,0 +1,41 @@
+// Atta v0: the life of one worker, as Atta's worker manager and tracker see it.
+// Render: dot -Tsvg worker-lifecycle.dot -o worker-lifecycle.svg && rsvg-convert -z 1.6 worker-lifecycle.svg -o worker-lifecycle.png
+digraph worker {
+  graph [rankdir=LR, fontname="Helvetica", nodesep=0.5, ranksep=0.7, pad=0.3, bgcolor="white",
+         label=<<b>Worker lifecycle (v0)</b><br/><font point-size="11" color="#666666">every transition is stored as an event · Slack plan message updated on each</font>>, labelloc=t, fontsize=18];
+  node  [shape=box, style="rounded,filled", fontname="Helvetica", fontsize=11, fillcolor="#ffffff", color="#2b6cb0", penwidth=1.4, margin="0.16,0.08"];
+  edge  [fontname="Helvetica", fontsize=9, color="#555555", arrowsize=0.7];
+
+  start [shape=circle, label="", width=0.18, fillcolor="#333333", color="#333333"];
+  end   [shape=doublecircle, label="", width=0.14, fillcolor="#333333", color="#333333"];
+
+  launching   [label=<<b>Launching</b><br/><font point-size="9">T3 thread being created</font>>];
+  running     [label=<<b>Running</b><br/><font point-size="9">a run is in progress<br/>steps → Slack plan tasks</font>>, penwidth=2.2];
+  idle        [label=<<b>Idle</b><br/><font point-size="9">run finished · still subscribed<br/>to its thread</font>>];
+  interrupted [label=<<b>Interrupted</b><br/><font point-size="9">T3 restarted mid-run<br/>(no auto-resubmit in v0)</font>>, color="#b7791f"];
+  failed      [label=<<b>Failed</b><br/><font point-size="9">launch or run error</font>>, color="#c53030"];
+  stopping    [label=<<b>Stopping</b>>];
+  retired     [label=<<b>Retired</b><br/><font point-size="9">unsubscribed · worktree kept</font>>, fillcolor="#f5f5f5", color="#888888"];
+
+  start -> launching [label="router: start_worker"];
+  launching -> running [label="T3 launch ok"];
+  launching -> failed  [label="T3 launch error"];
+
+  running -> running [label="step → plan task\nsteer · report → router"];
+  running -> idle    [label="run completed\n→ \"worker finished\" to router"];
+  running -> interrupted [label="run ends \"interrupted\""];
+  running -> failed  [label="run error"];
+  running -> stopping [label="router or you: stop"];
+
+  idle -> running [label="follow-up in thread\n(pass-through, queued)"];
+  interrupted -> running [label="you: continue\n(resubmit)"];
+  failed -> running [label="router: retry", style=dashed];
+
+  stopping -> retired [label="T3 run stopped"];
+  idle -> retired [label="thread closed\nor idle 7 days"];
+  interrupted -> retired [label="router or you: drop"];
+  failed -> retired [label="router: give up"];
+  retired -> end;
+
+  { rank=same; idle; interrupted; failed; }
+}

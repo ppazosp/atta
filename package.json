@@ -1,0 +1,44 @@
+{
+  "name": "atta",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Send work to coding agents from Slack and follow it there.",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "start": "node --experimental-strip-types src/app/main.ts",
+    "check": "pnpm fmt:check && pnpm lint && pnpm typecheck && pnpm test && pnpm knip",
+    "fmt": "oxfmt .",
+    "fmt:check": "oxfmt --check .",
+    "lint": "oxlint --report-unused-disable-directives --deny-warnings",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "knip": "knip --no-config-hints",
+    "sync:repos": "sh scripts/sync-repos.sh"
+  },
+  "dependencies": {
+    "@earendil-works/chord": "1.5.0",
+    "@earendil-works/pi-ai": "1.5.0",
+    "@earendil-works/pi-durable": "1.5.0",
+    "@earendil-works/pi-schema": "1.5.0",
+    "@effect/platform-node": "4.0.7",
+    "@effect/sql-sqlite-node": "4.0.7",
+    "@modelcontextprotocol/sdk": "1.32.2",
+    "@slack/bolt": "5.1.0",
+    "@slack/web-api": "8.3.0",
+    "effect": "4.0.7"
+  },
+  "devDependencies": {
+    "@effect/vitest": "4.0.7",
+    "@types/node": "24.12.4",
+    "knip": "6.44.1",
+    "oxfmt": "0.75.0",
+    "oxlint": "1.90.0",
+    "typescript": "7.0.2",
+    "vitest": "5.1.0"
+  },
+  "engines": {
+    "node": ">=24.13.0"
+  },
+  "packageManager": "pnpm@12.5.1"
+}
