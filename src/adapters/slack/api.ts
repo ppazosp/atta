@@ -64,3 +64,13 @@ export const metadata = (operationId: string) => ({
   event_type: "atta_operation",
   event_payload: { operation_id: operationId },
 })
+
+/**
+ * Text atta posts comes from a model, and a model can be steered by what a worker read. In mrkdwn, escape the
+ * three characters Slack uses for mentions, channel pings and links, so `<!channel>` stays text.
+ */
+export const escapeMrkdwn = (text: string) =>
+  text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+
+/** Markdown blocks do not decode entities, so break Slack's special `<!…>`, `<@…>`, `<#…>` and `<http…>` forms instead. */
+export const neutralizeMarkdown = (text: string) => text.replace(/<(?=[!@#]|https?:|mailto:)/g, "<\u200b")

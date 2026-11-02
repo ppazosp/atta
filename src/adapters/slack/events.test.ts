@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Effect, Result, Stream } from "effect"
+import { Effect, Option, Result, Stream } from "effect"
 import { TestClock } from "effect/testing"
 import { Channel } from "../../ports/Channel.ts"
 import { threadKey } from "../../core/domain/thread.ts"
@@ -131,16 +131,14 @@ describe("Slack events", () => {
     envelope({ ...message, ts: 123 }),
     envelope({ ...message, text: null }),
     envelope({ ...message, user: undefined }),
-  ])("rejects malformed payload %# through ChannelError", (payload) => {
+  ])("skips malformed payload %# and keeps delivering later events", (payload) => {
     const fake = makeFakeSlack()
     return Effect.gen(function* () {
       const channel = yield* Channel
       yield* fake.emit("message", payload)
-      const result = yield* channel.events.pipe(Stream.runHead, Effect.result)
-      expect(Result.isFailure(result) && result.failure).toMatchObject({
-        _tag: "ChannelError",
-        operation: "events",
-      })
+      yield* fake.emit("message", envelope({ ...message, channel_type: "im" }, "Ev-after"))
+      const first = yield* channel.events.pipe(Stream.runHead)
+      expect(Option.getOrThrow(first).externalId).toBe("Ev-after")
     }).pipe(Effect.provide(fake.layer))
   })
 

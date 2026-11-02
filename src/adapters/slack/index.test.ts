@@ -14,7 +14,9 @@ const taggedReplies = async () => ({
     { ts: "2", metadata: metadata("another-operation") },
     { ts: "3", metadata: { event_type: "something_else", event_payload: { operation_id: "op01" } } },
     { ts: "4", metadata: { event_type: "atta_operation" } },
-    { ts: plan.ts, metadata: metadata("op01") },
+    // Someone else's message carrying atta's tag must not count.
+    { ts: "5", user: "U-SOMEONE", metadata: metadata("op01") },
+    { ts: plan.ts, user: "UBOT", metadata: metadata("op01") },
   ],
 })
 const channelNotFound = () =>
@@ -97,11 +99,38 @@ describe("Slack Channel", () => {
     fake.responses.replies = async () =>
       fake.calls.replies.length === 1
         ? { ok: true, messages: [], response_metadata: { next_cursor: "next-page" } }
-        : { ok: true, messages: [{ ts: plan.ts, metadata: metadata("op01") }] }
+        : { ok: true, messages: [{ ts: plan.ts, user: "UBOT", metadata: metadata("op01") }] }
     return Effect.gen(function* () {
       const channel = yield* Channel
       expect(yield* channel.findReply({ target: { thread }, operationId })).toEqual(Option.some(plan))
       expect(fake.calls.replies[1]).toMatchObject({ cursor: "next-page", include_all_metadata: true })
+    }).pipe(Effect.provide(fake.layer))
+  })
+
+  it.effect("ignores a tagged message that atta did not post", () => {
+    const fake = makeFakeSlack()
+    fake.responses.replies = async () => ({
+      ok: true,
+      messages: [{ ts: "9", user: "U-SOMEONE", metadata: metadata("op01") }],
+    })
+    return Effect.gen(function* () {
+      const channel = yield* Channel
+      expect(yield* channel.findReply({ target: { thread }, operationId })).toEqual(Option.none())
+    }).pipe(Effect.provide(fake.layer))
+  })
+
+  it.effect("posts model text with Slack's special characters escaped", () => {
+    const fake = makeFakeSlack()
+    return Effect.gen(function* () {
+      const channel = yield* Channel
+      yield* channel.reply({
+        target: { thread },
+        text: "<!channel> see <https://evil.example|docs> & go",
+        operationId,
+      })
+      expect(fake.calls.post.at(-1)).toMatchObject({
+        text: "&lt;!channel&gt; see &lt;https://evil.example|docs&gt; &amp; go",
+      })
     }).pipe(Effect.provide(fake.layer))
   })
 

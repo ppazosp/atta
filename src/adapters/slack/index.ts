@@ -4,7 +4,7 @@ import { WebClient } from "@slack/web-api"
 import { Cause, Clock, Effect, Layer, Option, Queue, Schema, Stream } from "effect"
 import type { ReplyTarget } from "../../ports/Channel.ts"
 import { Channel, ChannelError } from "../../ports/Channel.ts"
-import { call, channelError, metadata, Ok, Posted } from "./api.ts"
+import { call, channelError, escapeMrkdwn, metadata, Ok, Posted } from "./api.ts"
 import type { SlackClient } from "./api.ts"
 import { decodeEvent } from "./events.ts"
 import { makePlanWriter, planContent } from "./plan.ts"
@@ -23,7 +23,11 @@ const Config = Schema.Struct({
 })
 const Messages = Schema.Struct({
   messages: Schema.Array(
-    Schema.Struct({ ts: Schema.NonEmptyString, metadata: Schema.optionalKey(Schema.Unknown) }),
+    Schema.Struct({
+      ts: Schema.NonEmptyString,
+      user: Schema.optionalKey(Schema.String),
+      metadata: Schema.optionalKey(Schema.Unknown),
+    }),
   ),
   response_metadata: Schema.optionalKey(Schema.Struct({ next_cursor: Schema.optionalKey(Schema.String) })),
 })
@@ -88,7 +92,16 @@ export const SlackChannelLayer = (
 
       return Channel.of({
         events: Stream.fromQueue(inbox).pipe(
-          Stream.mapEffect(({ payload, receivedAt }) => decodeEvent(payload, options.botUserId, receivedAt)),
+          // A payload atta cannot read is logged and skipped; it must not stop every later event.
+          Stream.mapEffect(({ payload, receivedAt }) =>
+            decodeEvent(payload, options.botUserId, receivedAt).pipe(
+              Effect.catch((error) =>
+                Effect.logWarning("skipped a Slack event atta could not read", error).pipe(
+                  Effect.as(Option.none()),
+                ),
+              ),
+            ),
+          ),
           Stream.filter(Option.isSome),
           Stream.map((event) => event.value),
         ),
@@ -99,7 +112,7 @@ export const SlackChannelLayer = (
             () =>
               client.chat.postMessage({
                 ...targetArgs(target),
-                text,
+                text: escapeMrkdwn(text),
                 metadata: metadata(operationId),
               }),
             Posted,
@@ -128,7 +141,12 @@ export const SlackChannelLayer = (
                 : yield* call("conversations.history", () => client.conversations.history(args), Messages)
             for (const message of result.messages) {
               const tag = Schema.decodeUnknownOption(OperationMetadata)(message.metadata)
-              if (Option.isSome(tag) && tag.value.event_payload.operation_id === operationId) {
+              // Only atta's own messages count: anyone could post a message with the same metadata.
+              if (
+                message.user === options.botUserId &&
+                Option.isSome(tag) &&
+                tag.value.event_payload.operation_id === operationId
+              ) {
                 return Option.some({ team: where.team, conversation: where.conversation, ts: message.ts })
               }
             }
