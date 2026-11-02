@@ -3,7 +3,7 @@ import { Effect, Option, Result, Stream } from "effect"
 import { TestClock } from "effect/testing"
 import { Channel } from "../../ports/Channel.ts"
 import { threadKey } from "../../core/domain/thread.ts"
-import { envelope, makeFakeSlack, message, thread } from "./testing.ts"
+import { buttonAction, envelope, makeFakeSlack, message, thread } from "./testing.ts"
 
 describe("Slack events", () => {
   it.effect("records receipt time before the stream consumes the event", () => {
@@ -27,11 +27,24 @@ describe("Slack events", () => {
     },
     {
       name: "mention",
-      event: { ...message, type: "app_mention", channel: "C01", text: "<@UBOT> hello <@U02> <@UBOT>" },
+      event: {
+        ...message,
+        type: "app_mention",
+        channel_type: "channel",
+        channel: "C01",
+        text: "<@UBOT> hello <@U02> <@UBOT>",
+      },
       via: "mention",
       text: "hello <@U02>",
       root: message.ts,
     },
+    ...["channel", "group"].map((channelType) => ({
+      name: `${channelType} root`,
+      event: { ...message, channel_type: channelType, channel: channelType === "channel" ? "C01" : "G01" },
+      via: "channel",
+      text: "hello",
+      root: message.ts,
+    })),
     {
       name: "threaded mention",
       event: { ...message, type: "app_mention", ts: "2", thread_ts: message.ts, text: "hello <@UBOT>" },
@@ -70,7 +83,10 @@ describe("Slack events", () => {
         text,
         via,
       })
-      expect(threadKey(actual!.thread)).toBe(`slack:T01/${event.channel}/${root}`)
+      expect(actual!._tag).toBe("UserMessage")
+      if (actual!._tag === "UserMessage") {
+        expect(threadKey(actual!.thread)).toBe(`slack:T01/${event.channel}/${root}`)
+      }
     }).pipe(Effect.provide(fake.layer))
   })
 
@@ -92,7 +108,7 @@ describe("Slack events", () => {
     }).pipe(Effect.provide(fake.layer))
   })
 
-  it.effect("ignores self, bot messages, every subtype, channel roots and unsupported conversations", () => {
+  it.effect("ignores self, bot messages, every subtype and unsupported conversations", () => {
     const fake = makeFakeSlack()
     return Effect.gen(function* () {
       const channel = yield* Channel
@@ -108,8 +124,9 @@ describe("Slack events", () => {
           "file_share",
         ].map((subtype) => ({ type: "message", subtype })),
         { ...message, subtype: "unknown_future_subtype" },
-        { ...message, channel_type: "channel" },
-        { ...message, channel_type: "group" },
+        { ...message, channel_type: "channel", text: "<@UBOT> hello" },
+        { ...message, channel_type: "group", text: "<@UBOT> hello" },
+        { ...message, channel_type: "mpim" },
         { ...message, channel_type: "mpim", thread_ts: thread.rootTs },
         { type: "app_home_opened" },
         { ...message, channel_type: "channel", thread_ts: thread.rootTs, text: "<@UBOT> hello" },
@@ -121,7 +138,72 @@ describe("Slack events", () => {
       )
       const [actual] = yield* channel.events.pipe(Stream.take(1), Stream.runCollect)
       expect(actual!.externalId).toBe("EvMention")
-      expect(actual!.via).toBe("mention")
+      expect(actual!._tag === "UserMessage" && actual!.via).toBe("mention")
+    }).pipe(Effect.provide(fake.layer))
+  })
+
+  it.effect.each([
+    { actionId: "atta_approve", decision: "approve" },
+    { actionId: "atta_reject", decision: "reject" },
+  ])("acknowledges $actionId immediately and emits a decision", ({ actionId, decision }) => {
+    const fake = makeFakeSlack()
+    return Effect.gen(function* () {
+      const channel = yield* Channel
+      yield* TestClock.adjust(123)
+      yield* fake.click(actionId, buttonAction(actionId))
+      expect(fake.calls.ack).toEqual([actionId])
+      yield* TestClock.adjust(2_000)
+      const [event] = yield* channel.events.pipe(Stream.take(1), Stream.runCollect)
+      expect(event).toEqual({
+        _tag: "ApprovalDecision",
+        id: "slack:decision:proposal01:1700000002.000100",
+        source: "slack",
+        externalId: "decision:proposal01:U01",
+        receivedAt: 123,
+        proposalId: "proposal01",
+        decision,
+        userId: "U01",
+      })
+    }).pipe(Effect.provide(fake.layer))
+  })
+
+  it.effect("keeps one deduplication ID per proposal and clicker across decisions and retries", () => {
+    const fake = makeFakeSlack()
+    return Effect.gen(function* () {
+      const channel = yield* Channel
+      yield* fake.click("atta_approve", buttonAction("atta_approve", "proposal01", "1"))
+      yield* fake.click("atta_approve", buttonAction("atta_approve", "proposal01", "1"))
+      yield* fake.click("atta_reject", buttonAction("atta_reject", "proposal01", "2"))
+      const events = yield* channel.events.pipe(Stream.take(3), Stream.runCollect)
+      expect(events.map((event) => event.externalId)).toEqual(Array(3).fill("decision:proposal01:U01"))
+      expect(events.map((event) => event.id)).toEqual([
+        "slack:decision:proposal01:1",
+        "slack:decision:proposal01:1",
+        "slack:decision:proposal01:2",
+      ])
+    }).pipe(Effect.provide(fake.layer))
+  })
+
+  it.effect.each([
+    null,
+    { ...buttonAction("atta_approve"), user: { id: "" } },
+    { ...buttonAction("atta_approve"), actions: [] },
+    buttonAction("atta_approve", ""),
+    buttonAction("atta_reject", "proposal01", ""),
+    buttonAction("unknown_action"),
+    {
+      ...buttonAction("atta_approve"),
+      actions: [{ type: "button", action_id: "atta_approve", action_ts: "1", value: 42 }],
+    },
+  ])("acknowledges and skips unreadable action %#", (payload) => {
+    const fake = makeFakeSlack()
+    return Effect.gen(function* () {
+      const channel = yield* Channel
+      yield* fake.click("atta_approve", payload)
+      expect(fake.calls.ack).toEqual(["atta_approve"])
+      yield* fake.emit("message", envelope(message, "Ev-after-action"))
+      const [event] = yield* channel.events.pipe(Stream.take(1), Stream.runCollect)
+      expect(event!.externalId).toBe("Ev-after-action")
     }).pipe(Effect.provide(fake.layer))
   })
 

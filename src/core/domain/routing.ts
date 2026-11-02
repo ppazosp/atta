@@ -5,8 +5,14 @@ import type { WorkerState } from "./worker.ts"
 
 /** Where one event goes. Dispatch (WP5) carries it out; this module only decides. */
 export const Route = Schema.TaggedUnion({
-  Drop: { reason: Schema.Literals(["untrusted_sender", "unknown_thread"]) },
+  Drop: { reason: Schema.Literals(["untrusted_sender", "unknown_thread", "not_for_atta"]) },
   ToRouter: {},
+  /** A message in a watched channel: the router may propose work, but nothing is posted and no reactions. */
+  Observe: {},
+  /** The trusted user decided on a proposal: core starts the work or drops it, without the router. */
+  Decide: {},
+  /** Stored for reference only (a proposal). */
+  Record: {},
   /** Straight to the thread's worker, without the router: a steer while it runs, a new run while it is idle. */
   ToWorker: { workerId: WorkerId, mode: Schema.Literals(["steer", "queue"]) },
   StopWorkers: { workerIds: Schema.Array(WorkerId) },
@@ -28,6 +34,8 @@ export interface RoutingContext {
    * is in, so a thread reply only counts when the thread is one atta is part of.
    */
   readonly threadKnown: boolean
+  /** Whether the event's conversation is one of the watched channels. */
+  readonly watched: boolean
 }
 
 export const isStopCommand = (text: string) =>
@@ -48,9 +56,22 @@ export const isStopCommand = (text: string) =>
 export const route = (event: Event, context: RoutingContext): Route => {
   switch (event._tag) {
     case "UserMessage": {
-      if (event.userId !== context.trustedUserId) return Route.cases.Drop.make({ reason: "untrusted_sender" })
+      const trusted = event.userId === context.trustedUserId
+      // Someone else's message only matters in a watched channel, and only as something to observe.
+      if (!trusted) {
+        return context.watched
+          ? Route.cases.Observe.make({})
+          : Route.cases.Drop.make({ reason: "untrusted_sender" })
+      }
+      if (event.via === "channel") {
+        return context.watched
+          ? Route.cases.Observe.make({})
+          : Route.cases.Drop.make({ reason: "not_for_atta" })
+      }
       if (event.via === "thread_reply" && !context.threadKnown) {
-        return Route.cases.Drop.make({ reason: "unknown_thread" })
+        return context.watched
+          ? Route.cases.Observe.make({})
+          : Route.cases.Drop.make({ reason: "unknown_thread" })
       }
       const running = context.subscribers.filter((s) => s.state === "running")
       if (isStopCommand(event.text)) {
@@ -68,6 +89,12 @@ export const route = (event: Event, context: RoutingContext): Route => {
         mode: only.state === "running" ? "steer" : "queue",
       })
     }
+    case "ApprovalDecision":
+      return event.userId === context.trustedUserId
+        ? Route.cases.Decide.make({})
+        : Route.cases.Drop.make({ reason: "untrusted_sender" })
+    case "WorkProposed":
+      return Route.cases.Record.make({})
     case "ScheduledPrompt":
     case "WorkerReport":
     case "WorkerFinished":

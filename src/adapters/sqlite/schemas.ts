@@ -26,7 +26,10 @@ export const SubscriberRow = Schema.Struct({ workerId: WorkerId, state: WorkerSt
 
 export const DeliveryRow = Schema.Struct({
   eventId: EventId,
-  target: Schema.Union([Schema.Literal("router"), Schema.TemplateLiteral(["worker:", Schema.String])]),
+  target: Schema.Union([
+    Schema.Literals(["router", "observe", "core"]),
+    Schema.TemplateLiteral(["worker:", Schema.String]),
+  ]),
   status: Schema.Literals(["pending", "done"]),
   attempts: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
   createdAt: Timestamp,
@@ -45,6 +48,8 @@ export const OutboxRow = Schema.Struct({
     "worker_launch",
     "worker_send",
     "worker_stop",
+    "approval_request",
+    "approval_close",
   ]),
   payload: Json,
   status: Schema.Literals(["pending", "done", "failed"]),

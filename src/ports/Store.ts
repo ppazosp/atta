@@ -21,8 +21,11 @@ export interface Transition {
   readonly at: Timestamp
 }
 
-/** Where an event was sent. `worker:<id>` targets a worker directly (pass-through). */
-export type DeliveryTarget = "router" | `worker:${string}`
+/**
+ * Where an event was sent: the router, the router as an observation (a watched channel), core itself (an
+ * approval decision), or a worker directly (pass-through, `worker:<id>`).
+ */
+export type DeliveryTarget = "router" | "observe" | "core" | `worker:${string}`
 
 export interface Delivery {
   readonly eventId: EventId
@@ -41,6 +44,8 @@ export type OutboxKind =
   | "worker_launch"
   | "worker_send"
   | "worker_stop"
+  | "approval_request"
+  | "approval_close"
 
 /** One action atta takes outside. Written before the action, marked done with its result after. */
 export interface OutboxEntry {

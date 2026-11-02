@@ -7,7 +7,13 @@ import type { ToolExecutionResult } from "@earendil-works/pi-durable"
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node"
 import { Effect, Layer, Schema } from "effect"
 import type { AnyRouterTool } from "../../core/domain/tool.ts"
-import { EngineError, RouterEngine, RouterTools } from "../../ports/RouterEngine.ts"
+import {
+  EngineError,
+  ObserverEngine,
+  ObserverTools,
+  RouterEngine,
+  RouterTools,
+} from "../../ports/RouterEngine.ts"
 import { openCredentials } from "./credentials.ts"
 
 export { login } from "./login.ts"
@@ -76,113 +82,129 @@ const wrapTool = (tool: AnyRouterTool) => {
   })
 }
 
-/** The scope owns Pi's storage and scheduler. Inject Models to run offline providers in tests. */
+interface EngineOptions {
+  readonly models?: Models
+}
+
+/** The router's conversation. The scope owns Pi's storage and scheduler. Inject Models to run offline in tests. */
 export const PiDurableRouterEngineLayer = (
   config: PiDurableRouterConfig,
-  options: { readonly models?: Models } = {},
+  options: EngineOptions = {},
 ): Layer.Layer<RouterEngine, EngineError, RouterTools> =>
   Layer.effect(
     RouterEngine,
-    Effect.gen(function* () {
-      const settings = yield* Schema.decodeUnknownEffect(Config)(config).pipe(
-        Effect.mapError(engineError("config")),
-      )
-      const router = yield* RouterTools
-      const models = yield* Effect.gen(function* () {
-        if (options.models !== undefined) return options.models
-        const { store } = yield* openCredentials(settings.credentialsDir)
-        const collection = createModels({ credentials: store })
-        collection.setProvider(openaiProvider())
-        return collection
-      })
-      const installed = yield* Effect.try({
-        try: () => {
-          const tools = router.tools.map(wrapTool)
-          const registry = createRegistry()
-          registry.install(defineExtension({ name: "atta", tools }))
-          return { registry, tools }
-        },
-        catch: engineError("tools"),
-      })
-      const storage = yield* Effect.acquireRelease(
-        Effect.tryPromise({
-          try: () => openNodeSqliteStorage(settings.storagePath),
-          catch: engineError("open"),
-        }),
-        (resource) =>
-          Effect.tryPromise({
-            try: () => resource.close(BACKGROUND_CONTEXT),
-            catch: engineError("close"),
-          }).pipe(Effect.orDie),
-      )
-      const harness = yield* Effect.acquireRelease(
-        Effect.tryPromise({
-          try: () => Harness.open(storage, { models, registry: installed.registry }, BACKGROUND_CONTEXT),
-          catch: engineError("open"),
-        }),
-        (resource) =>
-          Effect.tryPromise({
-            try: () => resource.close(BACKGROUND_CONTEXT),
-            catch: engineError("close"),
-          }).pipe(Effect.orDie),
-      )
-      const root = yield* Effect.tryPromise({
-        try: () => harness.root(BACKGROUND_CONTEXT),
-        catch: engineError("root"),
-      })
-      yield* Effect.tryPromise({
-        try: () =>
-          root.configure(
-            {
-              model: { provider: settings.provider ?? "openai", modelId: settings.modelId },
-              thinkingLevel: settings.thinkingLevel,
-              instructions: router.instructions,
-              tools: installed.tools,
-            },
-            BACKGROUND_CONTEXT,
-          ),
-        catch: engineError("configure"),
-      })
-      yield* Effect.try({ try: () => harness.resume(), catch: engineError("resume") })
-
-      return RouterEngine.of({
-        submit: Effect.fn("RouterEngine.submit")(function* (input: typeof SubmissionInput.Type) {
-          const decoded = yield* Schema.decodeUnknownEffect(SubmissionInput)(input).pipe(
-            Effect.mapError(engineError("submit")),
-          )
-          yield* Effect.tryPromise({
-            try: (signal) =>
-              root.submit(
-                { ...decoded, type: "input", whenBusy: decoded.whenBusy === "queue" ? "followUp" : "steer" },
-                withAbortSignal(signal, BACKGROUND_CONTEXT),
-              ),
-            catch: engineError("submit"),
-          })
-        }),
-        settled: Effect.fn("RouterEngine.settled")(function* (requestId: string) {
-          return yield* Effect.tryPromise({
-            try: async (signal) => {
-              const context = withAbortSignal(signal, BACKGROUND_CONTEXT)
-              const record = await root.commit((tx) => tx.submissionByRequest(root.id, requestId), context)
-              if (record === undefined) return undefined
-              const submission = await harness.submission(record.id, context)
-              return submission?.wait(context)
-            },
-            catch: engineError("settled"),
-          }).pipe(
-            Effect.flatMap((record) =>
-              record === undefined
-                ? Effect.fail(
-                    new EngineError({ operation: "settled", message: `Unknown request: ${requestId}` }),
-                  )
-                : Effect.succeed(
-                    record.status === "done"
-                      ? ({ status: "answered" } as const)
-                      : ({ status: "unanswered", reason: record.reason } as const),
-                  ),
-            ),
-          )
-        }),
-      })
-    }),
+    Effect.flatMap(RouterTools, (tools) => makeEngine(config, tools, options)),
   )
+
+/** The observer's conversation: the same engine, in its own storage, with the observer's tools only. */
+export const PiDurableObserverEngineLayer = (
+  config: PiDurableRouterConfig,
+  options: EngineOptions = {},
+): Layer.Layer<ObserverEngine, EngineError, ObserverTools> =>
+  Layer.effect(
+    ObserverEngine,
+    Effect.flatMap(ObserverTools, (tools) => makeEngine(config, tools, options)),
+  )
+
+const makeEngine = (config: PiDurableRouterConfig, router: RouterTools["Service"], options: EngineOptions) =>
+  Effect.gen(function* () {
+    const settings = yield* Schema.decodeUnknownEffect(Config)(config).pipe(
+      Effect.mapError(engineError("config")),
+    )
+    const models = yield* Effect.gen(function* () {
+      if (options.models !== undefined) return options.models
+      const { store } = yield* openCredentials(settings.credentialsDir)
+      const collection = createModels({ credentials: store })
+      collection.setProvider(openaiProvider())
+      return collection
+    })
+    const installed = yield* Effect.try({
+      try: () => {
+        const tools = router.tools.map(wrapTool)
+        const registry = createRegistry()
+        registry.install(defineExtension({ name: "atta", tools }))
+        return { registry, tools }
+      },
+      catch: engineError("tools"),
+    })
+    const storage = yield* Effect.acquireRelease(
+      Effect.tryPromise({
+        try: () => openNodeSqliteStorage(settings.storagePath),
+        catch: engineError("open"),
+      }),
+      (resource) =>
+        Effect.tryPromise({
+          try: () => resource.close(BACKGROUND_CONTEXT),
+          catch: engineError("close"),
+        }).pipe(Effect.orDie),
+    )
+    const harness = yield* Effect.acquireRelease(
+      Effect.tryPromise({
+        try: () => Harness.open(storage, { models, registry: installed.registry }, BACKGROUND_CONTEXT),
+        catch: engineError("open"),
+      }),
+      (resource) =>
+        Effect.tryPromise({
+          try: () => resource.close(BACKGROUND_CONTEXT),
+          catch: engineError("close"),
+        }).pipe(Effect.orDie),
+    )
+    const root = yield* Effect.tryPromise({
+      try: () => harness.root(BACKGROUND_CONTEXT),
+      catch: engineError("root"),
+    })
+    yield* Effect.tryPromise({
+      try: () =>
+        root.configure(
+          {
+            model: { provider: settings.provider ?? "openai", modelId: settings.modelId },
+            thinkingLevel: settings.thinkingLevel,
+            instructions: router.instructions,
+            tools: installed.tools,
+          },
+          BACKGROUND_CONTEXT,
+        ),
+      catch: engineError("configure"),
+    })
+    yield* Effect.try({ try: () => harness.resume(), catch: engineError("resume") })
+
+    return RouterEngine.of({
+      submit: Effect.fn("RouterEngine.submit")(function* (input: typeof SubmissionInput.Type) {
+        const decoded = yield* Schema.decodeUnknownEffect(SubmissionInput)(input).pipe(
+          Effect.mapError(engineError("submit")),
+        )
+        yield* Effect.tryPromise({
+          try: (signal) =>
+            root.submit(
+              { ...decoded, type: "input", whenBusy: decoded.whenBusy === "queue" ? "followUp" : "steer" },
+              withAbortSignal(signal, BACKGROUND_CONTEXT),
+            ),
+          catch: engineError("submit"),
+        })
+      }),
+      settled: Effect.fn("RouterEngine.settled")(function* (requestId: string) {
+        return yield* Effect.tryPromise({
+          try: async (signal) => {
+            const context = withAbortSignal(signal, BACKGROUND_CONTEXT)
+            const record = await root.commit((tx) => tx.submissionByRequest(root.id, requestId), context)
+            if (record === undefined) return undefined
+            const submission = await harness.submission(record.id, context)
+            return submission?.wait(context)
+          },
+          catch: engineError("settled"),
+        }).pipe(
+          Effect.flatMap((record) =>
+            record === undefined
+              ? Effect.fail(
+                  new EngineError({ operation: "settled", message: `Unknown request: ${requestId}` }),
+                )
+              : Effect.succeed(
+                  record.status === "done"
+                    ? ({ status: "answered" } as const)
+                    : ({ status: "unanswered", reason: record.reason } as const),
+                ),
+          ),
+        )
+      }),
+    })
+  })

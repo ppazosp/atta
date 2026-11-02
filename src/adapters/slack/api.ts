@@ -1,7 +1,9 @@
 import type {
   ChatPostMessageArguments,
+  ChatGetPermalinkArguments,
   ChatUpdateArguments,
   ConversationsHistoryArguments,
+  ConversationsOpenArguments,
   ConversationsRepliesArguments,
   ReactionsAddArguments,
   ReactionsRemoveArguments,
@@ -13,10 +15,12 @@ export interface SlackClient {
   readonly chat: {
     postMessage(input: ChatPostMessageArguments): Promise<unknown>
     update(input: ChatUpdateArguments): Promise<unknown>
+    getPermalink(input: ChatGetPermalinkArguments): Promise<unknown>
   }
   readonly conversations: {
     replies(input: ConversationsRepliesArguments): Promise<unknown>
     history(input: ConversationsHistoryArguments): Promise<unknown>
+    open(input: ConversationsOpenArguments): Promise<unknown>
   }
   readonly reactions: {
     add(input: ReactionsAddArguments): Promise<unknown>

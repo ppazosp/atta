@@ -6,11 +6,16 @@ import type { ReplyTarget } from "../../ports/Channel.ts"
 import { Channel, ChannelError } from "../../ports/Channel.ts"
 import { call, channelError, escapeMrkdwn, metadata, Ok, Posted } from "./api.ts"
 import type { SlackClient } from "./api.ts"
-import { decodeEvent } from "./events.ts"
+import { makeApprovalWriter } from "./approval.ts"
+import { decodeAction, decodeEvent } from "./events.ts"
 import { makePlanWriter, planContent } from "./plan.ts"
 
 interface SlackApp {
   event(name: "message" | "app_mention", handler: (args: { body: unknown }) => Promise<void>): void
+  action(
+    name: "atta_approve" | "atta_reject",
+    handler: (args: { body: unknown; ack: () => Promise<unknown> }) => Promise<void>,
+  ): void
   error(handler: (error: unknown) => Promise<void>): void
   start(): Promise<unknown>
   stop(): Promise<unknown>
@@ -53,7 +58,7 @@ export const SlackChannelLayer = (
         ),
       )
       const inbox = yield* Queue.make<
-        { readonly payload: unknown; readonly receivedAt: number },
+        { readonly kind: "event" | "action"; readonly payload: unknown; readonly receivedAt: number },
         ChannelError
       >()
       const clock = yield* Clock.Clock
@@ -75,10 +80,21 @@ export const SlackChannelLayer = (
         // On a rate limit, wait as long as Slack says and try again, instead of failing a reply or reaction.
         new WebClient(options.botToken, { retryConfig: { retries: 2 } })
       const receive = async ({ body }: { body: unknown }) => {
-        Queue.offerUnsafe(inbox, { payload: body, receivedAt: clock.currentTimeMillisUnsafe() })
+        Queue.offerUnsafe(inbox, {
+          kind: "event",
+          payload: body,
+          receivedAt: clock.currentTimeMillisUnsafe(),
+        })
       }
       app.event("message", receive)
       app.event("app_mention", receive)
+      const receiveAction = async ({ body, ack }: { body: unknown; ack: () => Promise<unknown> }) => {
+        const receivedAt = clock.currentTimeMillisUnsafe()
+        await ack()
+        Queue.offerUnsafe(inbox, { kind: "action", payload: body, receivedAt })
+      }
+      app.action("atta_approve", receiveAction)
+      app.action("atta_reject", receiveAction)
       app.error(async (cause) => {
         Queue.failCauseUnsafe(inbox, Cause.fail(channelError("events", cause)))
       })
@@ -89,22 +105,66 @@ export const SlackChannelLayer = (
       )
       yield* Effect.tryPromise({ try: () => app.start(), catch: (cause) => channelError("start", cause) })
       const plans = makePlanWriter(client, scope)
+      const findReply: Channel["Service"]["findReply"] = Effect.fn("Slack.findReply")(function* ({
+        target,
+        operationId,
+      }) {
+        const where = "thread" in target ? target.thread : target.conversation
+        let cursor: string | undefined
+        do {
+          const args = {
+            channel: where.conversation,
+            include_all_metadata: true,
+            limit: 100,
+            ...(cursor ? { cursor } : {}),
+          }
+          const result =
+            "thread" in target
+              ? yield* call(
+                  "conversations.replies",
+                  () => client.conversations.replies({ ...args, ts: target.thread.rootTs }),
+                  Messages,
+                )
+              : yield* call("conversations.history", () => client.conversations.history(args), Messages)
+          for (const message of result.messages) {
+            const tag = Schema.decodeUnknownOption(OperationMetadata)(message.metadata)
+            // Only atta's own messages count: anyone could post a message with the same metadata.
+            if (
+              message.user === options.botUserId &&
+              Option.isSome(tag) &&
+              tag.value.event_payload.operation_id === operationId
+            ) {
+              return Option.some({ team: where.team, conversation: where.conversation, ts: message.ts })
+            }
+          }
+          cursor = "thread" in target ? result.response_metadata?.next_cursor?.trim() : undefined
+        } while (cursor)
+        return Option.none()
+      })
+      const approvals = makeApprovalWriter(client, findReply)
 
       return Channel.of({
         events: Stream.fromQueue(inbox).pipe(
           // A payload atta cannot read is logged and skipped; it must not stop every later event.
-          Stream.mapEffect(({ payload, receivedAt }) =>
-            decodeEvent(payload, options.botUserId, receivedAt).pipe(
+          Stream.mapEffect(({ kind, payload, receivedAt }) => {
+            const decoded: Effect.Effect<
+              Option.Option<Stream.Success<Channel["Service"]["events"]>>,
+              ChannelError
+            > = kind === "action"
+              ? decodeAction(payload, receivedAt)
+              : decodeEvent(payload, options.botUserId, receivedAt)
+            return decoded.pipe(
               Effect.catch((error) =>
                 Effect.logWarning("skipped a Slack event atta could not read", error).pipe(
                   Effect.as(Option.none()),
                 ),
               ),
-            ),
-          ),
+            )
+          }),
           Stream.filter(Option.isSome),
           Stream.map((event) => event.value),
         ),
+        ...approvals,
         reply: Effect.fn("Slack.reply")(function* ({ target, text, operationId }) {
           // oxlint-disable unicorn/require-post-message-target-origin -- This is Slack's Web API.
           const result = yield* call(
@@ -121,39 +181,7 @@ export const SlackChannelLayer = (
           const where = "thread" in target ? target.thread : target.conversation
           return { team: where.team, conversation: where.conversation, ts: result.ts }
         }),
-        findReply: Effect.fn("Slack.findReply")(function* ({ target, operationId }) {
-          const where = "thread" in target ? target.thread : target.conversation
-          let cursor: string | undefined
-          do {
-            const args = {
-              channel: where.conversation,
-              include_all_metadata: true,
-              limit: 100,
-              ...(cursor ? { cursor } : {}),
-            }
-            const result =
-              "thread" in target
-                ? yield* call(
-                    "conversations.replies",
-                    () => client.conversations.replies({ ...args, ts: target.thread.rootTs }),
-                    Messages,
-                  )
-                : yield* call("conversations.history", () => client.conversations.history(args), Messages)
-            for (const message of result.messages) {
-              const tag = Schema.decodeUnknownOption(OperationMetadata)(message.metadata)
-              // Only atta's own messages count: anyone could post a message with the same metadata.
-              if (
-                message.user === options.botUserId &&
-                Option.isSome(tag) &&
-                tag.value.event_payload.operation_id === operationId
-              ) {
-                return Option.some({ team: where.team, conversation: where.conversation, ts: message.ts })
-              }
-            }
-            cursor = "thread" in target ? result.response_metadata?.next_cursor?.trim() : undefined
-          } while (cursor)
-          return Option.none()
-        }),
+        findReply,
         react: Effect.fn("Slack.react")((message, emoji) =>
           call(
             "reactions.add",

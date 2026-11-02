@@ -4,7 +4,7 @@ import type { MessageRef } from "../../src/core/domain/thread.ts"
 import type { PlanTask, ReplyTarget } from "../../src/ports/Channel.ts"
 import { Channel } from "../../src/ports/Channel.ts"
 
-type UserMessage = Extract<Event, { _tag: "UserMessage" }>
+type UserMessage = Extract<Event, { _tag: "UserMessage" | "ApprovalDecision" }>
 
 export type ChannelCall =
   | {
@@ -23,6 +23,16 @@ export type ChannelCall =
       readonly title: string
       readonly tasks: ReadonlyArray<PlanTask>
     }
+  | {
+      readonly _tag: "requestApproval"
+      readonly proposalId: string
+      readonly title: string
+      readonly repo: string
+      readonly why: string
+      readonly brief: string
+      readonly message: MessageRef
+    }
+  | { readonly _tag: "closeApproval"; readonly message: MessageRef; readonly text: string }
   | {
       readonly _tag: "finishPlan"
       readonly plan: MessageRef
@@ -71,6 +81,14 @@ export const FakeChannelLayer = Layer.effectContext(
             return Option.none()
           }),
         ),
+      requestApproval: ({ ownerUserId, proposalId, title, repo, why, brief }) =>
+        Effect.gen(function* () {
+          // The owner's DM, as Slack would open it.
+          const message = nextMessage("T01", `D-${ownerUserId}`)
+          yield* record({ _tag: "requestApproval", proposalId, title, repo, why, brief, message })
+          return message
+        }),
+      closeApproval: ({ message, text }) => record({ _tag: "closeApproval", message, text }),
       react: (message, emoji) => record({ _tag: "react", message, emoji }),
       unreact: (message, emoji) => record({ _tag: "unreact", message, emoji }),
       upsertPlan: ({ thread, plan, title, tasks, operationId }) =>

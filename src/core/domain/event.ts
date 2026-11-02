@@ -21,7 +21,8 @@ export const Event = Schema.TaggedUnion({
     message: MessageRef,
     userId: Schema.NonEmptyString,
     text: Schema.String,
-    via: Schema.Literals(["dm", "mention", "thread_reply"]),
+    /** `channel`: a message in a watched channel that does not mention atta, from anyone. */
+    via: Schema.Literals(["dm", "mention", "thread_reply", "channel"]),
   },
   /** A prompt from the config file, due at `slot`, for an existing thread or a new one. */
   ScheduledPrompt: {
@@ -42,6 +43,36 @@ export const Event = Schema.TaggedUnion({
     receivedAt: Timestamp,
     workerId: WorkerId,
     text: Schema.String,
+  },
+  /**
+   * The router proposed work on a message it observed in a watched channel. Stored so the owner's decision can
+   * find it; it is never routed.
+   */
+  WorkProposed: {
+    id: EventId,
+    source: Schema.Literal("atta"),
+    externalId: Schema.NonEmptyString,
+    receivedAt: Timestamp,
+    /** The channel thread the work is about, where it runs if the owner approves. */
+    thread: ThreadRef,
+    repo: Schema.NonEmptyString,
+    title: Schema.NonEmptyString,
+    brief: Schema.NonEmptyString,
+    why: Schema.NonEmptyString,
+  },
+  /** Someone clicked Start or Skip on a proposal. Only the trusted user's first click counts. */
+  ApprovalDecision: {
+    id: EventId,
+    source: Schema.Literal("slack"),
+    /**
+     * `decision:<proposal ID>:<user ID>`, so only a user's first click on a proposal is stored, and someone else's
+     * click cannot take the owner's place.
+     */
+    externalId: Schema.NonEmptyString,
+    receivedAt: Timestamp,
+    proposalId: EventId,
+    decision: Schema.Literals(["approve", "reject"]),
+    userId: Schema.NonEmptyString,
   },
   /** The tracker saw a worker run end. */
   WorkerFinished: {
