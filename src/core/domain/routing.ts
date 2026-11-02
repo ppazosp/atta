@@ -25,7 +25,7 @@ export interface RoutingContext {
   readonly subscribers: ReadonlyArray<Subscriber>
 }
 
-const isStopCommand = (text: string) =>
+export const isStopCommand = (text: string) =>
   text
     .trim()
     .toLowerCase()
