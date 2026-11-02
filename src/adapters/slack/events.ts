@@ -24,6 +24,18 @@ const Message = Schema.Struct({
   thread_ts: Schema.optionalKey(Schema.NonEmptyString),
   text: Schema.String,
 })
+const Action = Schema.Struct({
+  type: Schema.Literal("block_actions"),
+  user: Schema.Struct({ id: Schema.NonEmptyString }),
+  actions: Schema.Tuple([
+    Schema.Struct({
+      type: Schema.Literal("button"),
+      action_id: Schema.Literals(["atta_approve", "atta_reject"]),
+      action_ts: Schema.NonEmptyString,
+      value: EventId,
+    }),
+  ]),
+})
 
 const decode = <S extends Schema.ConstraintDecoder<unknown>>(schema: S, value: unknown) =>
   Schema.decodeUnknownEffect(schema)(value).pipe(
@@ -49,8 +61,8 @@ export const decodeEvent = Effect.fn("Slack.decodeEvent")(function* (
   const mention = `<@${botUserId}>`
   const dm = event.type === "message" && event.channel_type === "im"
   if (event.type === "message" && !dm) {
-    // Slack also delivers a mentioned thread reply as app_mention, with its own event ID.
-    if (!event.thread_ts || event.text.includes(mention)) return Option.none()
+    // Slack also delivers a mention as app_mention, with its own event ID.
+    if (event.text.includes(mention)) return Option.none()
     if (event.channel_type !== "channel" && event.channel_type !== "group") return Option.none()
   }
   return Option.some({
@@ -63,6 +75,24 @@ export const decodeEvent = Effect.fn("Slack.decodeEvent")(function* (
     message: { team: body.team_id, conversation: event.channel, ts: event.ts },
     userId: event.user,
     text: event.type === "app_mention" ? event.text.split(mention).join("").trim() : event.text,
-    via: dm ? "dm" : event.type === "app_mention" ? "mention" : "thread_reply",
+    via: dm ? "dm" : event.type === "app_mention" ? "mention" : event.thread_ts ? "thread_reply" : "channel",
+  })
+})
+
+export const decodeAction = Effect.fn("Slack.decodeAction")(function* (
+  payload: unknown,
+  receivedAt: number,
+): Effect.fn.Return<Option.Option<Extract<Event, { _tag: "ApprovalDecision" }>>, ChannelError> {
+  const body = yield* decode(Action, payload)
+  const [action] = body.actions
+  return Option.some({
+    _tag: "ApprovalDecision",
+    id: EventId.make(`slack:decision:${action.value}:${action.action_ts}`),
+    source: "slack",
+    externalId: `decision:${action.value}`,
+    receivedAt: Timestamp.make(receivedAt),
+    proposalId: action.value,
+    decision: action.action_id === "atta_approve" ? "approve" : "reject",
+    userId: body.user.id,
   })
 })

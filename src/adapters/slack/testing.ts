@@ -1,7 +1,9 @@
 import type {
   ChatPostMessageArguments,
+  ChatGetPermalinkArguments,
   ChatUpdateArguments,
   ConversationsHistoryArguments,
+  ConversationsOpenArguments,
   ConversationsRepliesArguments,
   ReactionsAddArguments,
   ReactionsRemoveArguments,
@@ -29,14 +31,23 @@ export const message = {
   ts: thread.rootTs,
   text: "hello",
 }
+export const buttonAction = (actionId: string, value = "proposal01", actionTs = "1700000002.000100") => ({
+  type: "block_actions",
+  user: { id: "U01" },
+  actions: [{ type: "button", action_id: actionId, value, action_ts: actionTs }],
+})
 
 export const makeFakeSlack = () => {
   const handlers = new Map<string, (args: { body: unknown }) => Promise<void>>()
+  const actions = new Map<string, (args: { body: unknown; ack: () => Promise<unknown> }) => Promise<void>>()
   const calls = {
     post: [] as Array<ChatPostMessageArguments>,
     update: [] as Array<ChatUpdateArguments>,
     replies: [] as Array<ConversationsRepliesArguments>,
     history: [] as Array<ConversationsHistoryArguments>,
+    open: [] as Array<ConversationsOpenArguments>,
+    permalink: [] as Array<ChatGetPermalinkArguments>,
+    ack: [] as Array<string>,
     add: [] as Array<ReactionsAddArguments>,
     remove: [] as Array<ReactionsRemoveArguments>,
   }
@@ -45,6 +56,11 @@ export const makeFakeSlack = () => {
     update: async (): Promise<unknown> => ({ ok: true }),
     replies: async (): Promise<unknown> => ({ ok: true, messages: [] }),
     history: async (): Promise<unknown> => ({ ok: true, messages: [] }),
+    open: async (): Promise<unknown> => ({ ok: true, channel: { id: "D-OWNER" } }),
+    permalink: async (): Promise<unknown> => ({
+      ok: true,
+      permalink: "https://example.slack.com/archives/C01/p1700000000000100",
+    }),
     add: async (): Promise<unknown> => ({ ok: true }),
     remove: async (): Promise<unknown> => ({ ok: true }),
     start: async (): Promise<unknown> => undefined,
@@ -61,6 +77,10 @@ export const makeFakeSlack = () => {
         calls.update.push(input)
         return responses.update()
       },
+      getPermalink: (input) => {
+        calls.permalink.push(input)
+        return responses.permalink()
+      },
     },
     conversations: {
       replies: (input) => {
@@ -70,6 +90,10 @@ export const makeFakeSlack = () => {
       history: (input) => {
         calls.history.push(input)
         return responses.history()
+      },
+      open: (input) => {
+        calls.open.push(input)
+        return responses.open()
       },
     },
     reactions: {
@@ -91,6 +115,9 @@ export const makeFakeSlack = () => {
         event: (name, handler) => {
           handlers.set(name, handler)
         },
+        action: (name, handler) => {
+          actions.set(name, handler)
+        },
         error: (handler) => {
           onError = handler
         },
@@ -110,6 +137,15 @@ export const makeFakeSlack = () => {
     lifecycle,
     layer,
     emit: (name: string, body: unknown) => Effect.promise(() => handlers.get(name)!({ body })),
+    click: (name: string, body: unknown) =>
+      Effect.promise(() =>
+        actions.get(name)!({
+          body,
+          ack: async () => {
+            calls.ack.push(name)
+          },
+        }),
+      ),
     error: (cause: unknown) => Effect.promise(() => onError(cause)),
   }
 }
