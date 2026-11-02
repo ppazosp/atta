@@ -19,7 +19,7 @@ import {
   ToolResult,
 } from "./schemas.ts"
 
-export { fileOAuthProvider } from "./oauth.ts"
+export { fileOAuthProvider, T3_REDIRECT_URL } from "./oauth.ts"
 export type T3RuntimeConfig = typeof Config.Type
 
 interface Options {

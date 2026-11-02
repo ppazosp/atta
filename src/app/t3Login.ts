@@ -3,10 +3,10 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
 import { UnauthorizedError } from "@modelcontextprotocol/sdk/client/auth.js"
 import { Console, Effect } from "effect"
-import { fileOAuthProvider } from "../adapters/t3/index.ts"
+import { fileOAuthProvider, T3_REDIRECT_URL } from "../adapters/t3/index.ts"
 
-const CALLBACK_PORT = 8765
-const REDIRECT = `http://localhost:${CALLBACK_PORT}/callback`
+const REDIRECT = T3_REDIRECT_URL
+const CALLBACK_PORT = Number(new URL(REDIRECT).port)
 
 /** Waits for T3's OAuth redirect on localhost and returns the code. */
 const waitForCode = () =>

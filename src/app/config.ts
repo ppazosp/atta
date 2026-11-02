@@ -44,6 +44,9 @@ const load = Effect.fn("Config.load")(function* (path: string) {
   })
 })
 
+/** Only the config file, for commands that do not talk to Slack (the logins). */
+export const FileSettingsLayer = (path = "./atta.config.ts") => Layer.effect(Settings, load(path))
+
 export const SettingsLayer = (path = "./atta.config.ts") =>
   Layer.effectContext(
     Effect.gen(function* () {

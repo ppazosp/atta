@@ -3,7 +3,7 @@ import { Console, Effect, Layer } from "effect"
 import { login as routerLogin } from "../adapters/pi-durable/index.ts"
 import { runCore } from "../core/run.ts"
 import { Settings } from "../core/Settings.ts"
-import { SettingsLayer } from "./config.ts"
+import { FileSettingsLayer } from "./config.ts"
 import { AppLayer, paths } from "./layers.ts"
 import { t3Login } from "./t3Login.ts"
 import { version } from "./version.ts"
@@ -29,12 +29,12 @@ const program: Effect.Effect<void, unknown> =
     : command === "login" && target === "router"
       ? settings.pipe(
           Effect.flatMap((s) => routerLogin(paths(s.dataDir).routerCredentials)),
-          Effect.provide(SettingsLayer(configPath)),
+          Effect.provide(FileSettingsLayer(configPath)),
         )
       : command === "login" && target === "t3"
         ? settings.pipe(
             Effect.flatMap((s) => t3Login(s.t3.url, paths(s.dataDir).t3Tokens)),
-            Effect.provide(SettingsLayer(configPath)),
+            Effect.provide(FileSettingsLayer(configPath)),
           )
         : Console.log(usage)
 
