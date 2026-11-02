@@ -235,6 +235,37 @@ describe("T3 runtime", () => {
     }).pipe(Effect.scoped),
   )
 
+  it.effect("turns Codex's plan into plan steps, and rereads the plan while steps remain", () =>
+    Effect.gen(function* () {
+      const recorded = yield* fixture("run/04-activity-page-0")
+      const page = yield* Schema.decodeUnknownEffect(StatusPage)(recorded.data)
+      const source = page.items[0]!
+      const items = [
+        {
+          ...source,
+          itemId: "turn-plan",
+          type: "todo_list",
+          status: "running",
+          title: null,
+          text: "Add div with a zero check\n[completed] Read calc.py\n[running] Add div()\n[pending] Add tests",
+          position: 1,
+        },
+        { ...source, itemId: "cmd", type: "command_execution", status: "completed", position: 2 },
+      ]
+      const { layer } = yield* replay([{ ...recorded, data: { ...recorded.data, items, nextPosition: 2 } }])
+      const result = yield* Effect.gen(function* () {
+        return yield* (yield* Runtime).steps({ worker: page.thread.threadId, afterPosition: 0 })
+      }).pipe(Effect.provide(layer))
+      expect(result.steps.filter((s) => s.kind === "plan_step").map((s) => [s.title, s.status])).toEqual([
+        ["Read calc.py", "complete"],
+        ["Add div()", "in_progress"],
+        ["Add tests", "pending"],
+      ])
+      // The plan still has open steps, so the next read starts before it again.
+      expect(result.nextPosition).toBe(0)
+    }).pipe(Effect.scoped),
+  )
+
   it.effect("maps waiting, empty-text and unknown activity items without skipping unfinished work", () =>
     Effect.gen(function* () {
       const recorded = yield* fixture("run/04-activity-page-0")

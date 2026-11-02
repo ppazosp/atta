@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.atta.t3</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>__NPX__</string>
+    <string>--yes</string>
+    <string>t3@0.1.7-nightly.20261102.4066</string>
+    <string>serve</string>
+    <string>--port</string><string>3999</string>
+    <string>--host</string><string>127.0.0.1</string>
+    <string>--no-browser</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>T3CODE_HOME</key><string>__HOME__/.atta/t3</string>
+    <key>PATH</key><string>__PATH__</string>
+  </dict>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>StandardOutPath</key><string>__HOME__/.atta/logs/t3.log</string>
+  <key>StandardErrorPath</key><string>__HOME__/.atta/logs/t3.log</string>
+</dict>
+</plist>

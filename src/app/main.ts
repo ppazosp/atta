@@ -1,8 +1,41 @@
 import { NodeRuntime } from "@effect/platform-node"
-import { Effect } from "effect"
+import { Console, Effect, Layer } from "effect"
+import { login as routerLogin } from "../adapters/pi-durable/index.ts"
+import { runCore } from "../core/run.ts"
+import { Settings } from "../core/Settings.ts"
+import { FileSettingsLayer } from "./config.ts"
+import { AppLayer, paths } from "./layers.ts"
+import { t3Login } from "./t3Login.ts"
 import { version } from "./version.ts"
 
-// Placeholder entry point until milestone 1 wires the layers.
-const main = Effect.log(`atta ${version}: nothing is wired yet`)
+const configPath = process.env["ATTA_CONFIG"] ?? "./atta.config.ts"
+const [command = "start", target] = process.argv.slice(2)
 
-NodeRuntime.runMain(main)
+const usage = `atta ${version}
+
+  atta start          run atta (Slack, router, workers)
+  atta login router   sign the router in to ChatGPT
+  atta login t3       sign atta in to T3 Code
+
+Config: ATTA_CONFIG or ./atta.config.ts. Slack tokens: SLACK_BOT_TOKEN, SLACK_APP_TOKEN.`
+
+const settings = Effect.gen(function* () {
+  return yield* Settings
+})
+
+const program: Effect.Effect<void, unknown> =
+  command === "start"
+    ? Layer.launch(Layer.effectDiscard(runCore).pipe(Layer.provide(AppLayer(configPath))))
+    : command === "login" && target === "router"
+      ? settings.pipe(
+          Effect.flatMap((s) => routerLogin(paths(s.dataDir).routerCredentials)),
+          Effect.provide(FileSettingsLayer(configPath)),
+        )
+      : command === "login" && target === "t3"
+        ? settings.pipe(
+            Effect.flatMap((s) => t3Login(s.t3.url, paths(s.dataDir).t3Tokens)),
+            Effect.provide(FileSettingsLayer(configPath)),
+          )
+        : Console.log(usage)
+
+NodeRuntime.runMain(program)

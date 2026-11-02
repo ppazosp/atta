@@ -76,3 +76,15 @@ Setup:
 - Run `demo agent` and `demo agent-update` in a channel thread (`@physaliapoc demo agent`), to compare channels with the DM.
 - Check `demo agent` and `demo agent-update` on mobile.
 - Confirm by eye that `demo agent-update` looks the same as `demo agent`.
+
+## Plan icons, measured live with atta (2 November 2026)
+
+Tested in the proof workspace with plans posted by atta's bot, judged by eye in the Slack desktop app:
+
+- A task with status `complete` is drawn as a plain dot, the same as `pending`, whether or not it has details or output. Only `in_progress` (a spinner) and `error` (⚠️) have their own icons.
+- The plan's header icon follows from its tasks: a spinner while any task is in progress, ⚠️ when any task has an error, and a ✓ when every task is complete. This holds for a plan edited with `chat.update` as much as for a streamed one, so the ✓ needs no streaming.
+- Stopping a stream turns its unfinished tasks into errors, but a `chat.update` straight after restores them (a spinner again on the running task).
+
+- A standalone `task_card` (outside a plan block) draws its own icon: a spinner while in progress, ✓ when complete, ⚠️ on error. Slack rejects `pending` for a standalone card (`must be a valid enum value`), and standalone cards have no connecting line between them.
+
+So atta shows a worker's progress as a bold title line followed by one standalone task card per step of the worker's own plan that has started, edited with `chat.update`: each finished step gets Slack's ✓, and steps not yet started appear when they start. At the end of a run, unfinished steps become `complete` (or `error` when the run did not complete). Failed intermediate commands are not shown as errors, and steps carry no details: the step titles are the progress.

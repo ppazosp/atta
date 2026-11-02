@@ -12,14 +12,43 @@ import { Outbox, Results } from "./Outbox.ts"
 import { Settings } from "./Settings.ts"
 import { Workers } from "./Workers.ts"
 
-/** Steps shown as plan tasks. Reasoning, checkpoints and the worker's own messages would only add noise. */
-const shown = new Set<Step["kind"]>(["command", "file_change", "other"])
+/** Steps shown when the worker has no plan yet. Reasoning, checkpoints and messages would only add noise. */
+const shownWithoutPlan = new Set<Step["kind"]>(["command", "file_change", "other"])
+
+const TITLE_LENGTH = 60
+
+/**
+ * A short task name for the plan message: the command without its shell wrapper, cut to one short line. The
+ * command's text and output stay in T3; Slack only needs to show what the worker is doing.
+ */
+export const taskTitle = (step: Step): string => {
+  const line = (step.title.split("\n")[0] ?? "").trim()
+  const command = line
+    .replace(/^\$\s*/, "")
+    .replace(/^\/bin\/(?:zsh|bash|sh)\s+-l?c\s+/, "")
+    .replace(/^(['"])(.*?)\1?$/, "$2")
+    .trim()
+  const title = command === "" ? step.kind.replace("_", " ") : command
+  return title.length > TITLE_LENGTH ? `${title.slice(0, TITLE_LENGTH - 1)}…` : title
+}
 
 interface RunView {
   readonly runId: string
   readonly position: number
-  readonly tasks: ReadonlyArray<PlanTask>
+  /** The worker's own plan steps, as the latest version of its plan lists them. */
+  readonly plan: ReadonlyArray<PlanTask>
+  /** Other steps, shown only while there is no plan. */
+  readonly steps: ReadonlyArray<PlanTask>
 }
+
+/**
+ * What the plan message shows: the worker's own plan when it has one, otherwise its steps. A failed command is
+ * normal work (a test that fails before the fix), so it shows as done; only a failed run gets a warning.
+ */
+const shownTasks = (view: RunView): ReadonlyArray<PlanTask> =>
+  view.plan.length > 0
+    ? view.plan
+    : view.steps.map((task) => (task.status === "error" ? { ...task, status: "complete" } : task))
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
@@ -59,26 +88,34 @@ export class Tracker extends Context.Service<
         runId: RunId,
         view: RunView,
       ) {
-        let { position, tasks } = view
+        let { position, plan, steps } = view
         let changed = false
         for (;;) {
           const page = yield* runtime.steps({ worker: worker.runtimeRef!, afterPosition: position })
-          for (const step of page.steps) {
-            if (step.runId !== runId || !shown.has(step.kind)) continue
-            const task: PlanTask = {
+          const mine = page.steps.filter((step) => step.runId === runId)
+          // A plan read again replaces the previous version: steps can be added, reworded or dropped.
+          const planSteps = mine.filter((step) => step.kind === "plan_step")
+          if (planSteps.length > 0) {
+            plan = planSteps.map((step) => ({
               id: step.id,
               title: step.title,
               status: step.status,
-              detail: step.detail,
-            }
-            const index = tasks.findIndex((t) => t.id === step.id)
-            tasks = index === -1 ? [...tasks, task] : tasks.map((t, i) => (i === index ? task : t))
+              detail: null,
+            }))
+            changed = true
+          }
+          for (const step of mine) {
+            if (!shownWithoutPlan.has(step.kind)) continue
+            const task: PlanTask = { id: step.id, title: taskTitle(step), status: step.status, detail: null }
+            // Under a plan, each action is shown as a detail of the step that was running when it happened.
+            const index = steps.findIndex((t) => t.id === step.id)
+            steps = index === -1 ? [...steps, task] : steps.map((t, i) => (i === index ? task : t))
             changed = true
           }
           if (page.nextPosition === position) break
           position = page.nextPosition
         }
-        return { view: { runId, position, tasks }, changed }
+        return { view: { runId, position, plan, steps }, changed }
       })
 
       const pollLocked = Effect.fn("Tracker.poll")(function* (workerId: WorkerId) {
@@ -104,7 +141,7 @@ export class Tracker extends Context.Service<
         const known = (yield* Ref.get(views)).get(worker.id)
         // After a restart, or for a new run, rebuild the plan from the start of the thread's steps.
         const base: RunView =
-          known !== undefined && known.runId === runId ? known : { runId, position: 0, tasks: [] }
+          known !== undefined && known.runId === runId ? known : { runId, position: 0, plan: [], steps: [] }
         const { view, changed } = yield* readSteps(worker, runId, base)
         yield* Ref.update(views, (all) => new Map(all).set(worker.id, view))
         if (changed) {
@@ -113,7 +150,7 @@ export class Tracker extends Context.Service<
               thread: parseThreadKey(worker.origin),
               plan: worker.planMessage,
               title: worker.brief.title,
-              tasks: view.tasks,
+              tasks: shownTasks(view),
               operationId: OperationId.make(`plan:${worker.id}:${runId}`),
             })
             .pipe(Effect.catch((error) => Effect.logWarning(`plan update for ${worker.id} failed`, error)))
@@ -125,7 +162,7 @@ export class Tracker extends Context.Service<
         if (status.state !== "finished") return
         const eventId = yield* workers.finishRun(worker.id, {
           status,
-          tasks: view.tasks,
+          tasks: shownTasks(view),
           position: view.position,
         })
         yield* forget(worker.id)

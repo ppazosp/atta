@@ -22,8 +22,12 @@ const briefFooter = (workerId: WorkerId) =>
     "",
     "---",
     `You are atta worker ${workerId}. atta's MCP server ("atta") is available to you.`,
+    "- Before you start, write a short plan with your plan tool (update_plan): 3 to 7 steps in plain words. Keep it",
+    "  current as you work: mark each step running when you start it and completed when it is done. The user follows",
+    "  your progress through this plan.",
     `- When you need context you do not have, call atta.ask with worker_id "${workerId}".`,
-    `- When you finish, or if you are blocked, call atta.report with worker_id "${workerId}" and a short result.`,
+    `- If you are blocked and need a decision, call atta.report with worker_id "${workerId}" and say what you need.`,
+    "  Do not report when you finish: atta sees that by itself.",
     "- Work on the branch created for you. Do not switch branches and do not commit to main.",
   ].join("\n")
 
@@ -31,6 +35,17 @@ const launchOp = (workerId: WorkerId) => OperationId.make(`launch:${workerId}`)
 const finishOp = (workerId: WorkerId, runId: string) => OperationId.make(`finish:${workerId}:${runId}`)
 
 type Failure = OutboxFailure | WorkerUnavailable
+
+/**
+ * The plan's last state says how the run ended: a completed run ticks steps the worker forgot to tick, and a run
+ * that failed, stopped or was interrupted marks its unfinished steps as errors, so nothing keeps spinning.
+ */
+export const finalTasks = (tasks: ReadonlyArray<PlanTask>, outcome: RunOutcome): ReadonlyArray<PlanTask> =>
+  tasks.map((task) =>
+    task.status === "pending" || task.status === "in_progress"
+      ? { ...task, status: outcome === "completed" ? ("complete" as const) : ("error" as const) }
+      : task,
+  )
 
 /** What a run ending looks like to core: the runtime's status and the plan as the tracker last drew it. */
 export interface RunEnd {
@@ -350,14 +365,11 @@ export class Workers extends Context.Service<
           status.assignedBranch !== null &&
           status.currentBranch !== null &&
           status.assignedBranch !== status.currentBranch
-        const answer = [
-          ...(wrongBranch
-            ? [
-                `Warning: committed on ${status.currentBranch}, not on its own branch ${status.assignedBranch}.`,
-              ]
-            : []),
-          ...(status.finalMessage ? [status.finalMessage] : []),
-        ].join("\n\n")
+        // The plan shows the outcome and the steps; the router tells the result below it. Only a worker that
+        // committed outside its own branch gets a line in the plan itself.
+        const answer = wrongBranch
+          ? `Warning: committed on ${status.currentBranch}, not on its own branch ${status.assignedBranch}.`
+          : ""
         const eventId = EventId.make(`finished:${workerId}:${status.runId}`)
         yield* store.transaction(
           Effect.gen(function* () {
@@ -376,7 +388,7 @@ export class Workers extends Context.Service<
               yield* outbox.enqueue(finishOp(workerId, status.runId), "plan_finish", {
                 plan: worker.planMessage,
                 title: worker.brief.title,
-                tasks: end.tasks,
+                tasks: finalTasks(end.tasks, outcome),
                 outcome,
                 answer: answer === "" ? null : answer,
               })

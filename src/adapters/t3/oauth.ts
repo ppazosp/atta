@@ -24,6 +24,9 @@ const ClientInformation = Schema.Struct({
 
 const FileError = Schema.Struct({ code: Schema.String })
 
+/** Where T3 sends the browser back after `atta login t3`. */
+export const T3_REDIRECT_URL = "http://localhost:8765/callback"
+
 export const signInRequired = (directory: string) =>
   new RuntimeError({
     operation: "connect",
@@ -77,10 +80,12 @@ export const fileOAuthProvider = (directory: string): OAuthClientProvider => {
 
   const interactive = () => Effect.runPromise(Effect.fail(signInRequired(directory)))
   return {
-    redirectUrl: undefined,
+    // The SDK only refreshes an expired token when the provider has a redirect URL. It is the one `atta login t3`
+    // signs in with; nothing listens on it while atta runs, and a full sign-in still fails with signInRequired.
+    redirectUrl: T3_REDIRECT_URL,
     clientMetadata: {
       client_name: "atta",
-      redirect_uris: [],
+      redirect_uris: [T3_REDIRECT_URL],
       grant_types: ["authorization_code", "refresh_token"],
       response_types: ["code"],
       token_endpoint_auth_method: "none",

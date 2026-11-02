@@ -16,6 +16,8 @@ export const RepoConfig = Schema.Struct({
   path: Schema.NonEmptyString,
   /** The T3 project that points at `path`. */
   t3ProjectId: Schema.NonEmptyString,
+  /** The branch workers start their worktrees from. Defaults to main. */
+  baseBranch: Schema.optionalKey(Schema.NonEmptyString),
 })
 export type RepoConfig = typeof RepoConfig.Type
 

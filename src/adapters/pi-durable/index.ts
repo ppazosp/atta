@@ -30,12 +30,28 @@ const SubmissionInput = Schema.Struct({
 const engineError = (operation: string) => (cause: unknown) =>
   new EngineError({ operation, message: String(cause) })
 
+/**
+ * OpenAI rejects a whole request ("response protection is unavailable") when any tool's parameters are not an
+ * object schema. Effect renders an empty struct as `{ not: { type: "null" } }`, so a tool without arguments
+ * gets an empty object schema instead.
+ */
+export const toolParameters = (input: AnyRouterTool["input"]) => {
+  const document = Schema.toJsonSchemaDocument(input)
+  const definitions = document.definitions as Record<string, Record<string, unknown>>
+  let schema = document.schema as Record<string, unknown>
+  // A named schema comes out as a reference to its definition; the model needs the object itself at the top.
+  const ref = schema["$ref"]
+  if (typeof ref === "string" && ref.startsWith("#/$defs/"))
+    schema = definitions[ref.slice("#/$defs/".length)] ?? schema
+  if (schema["type"] !== "object") return { type: "object", properties: {}, additionalProperties: false }
+  return Object.keys(definitions).length === 0 ? schema : { ...schema, $defs: definitions }
+}
+
 const wrapTool = (tool: AnyRouterTool) => {
-  const document = Schema.toJsonSchemaDocument(tool.input)
   return defineTool({
     name: tool.name,
     description: tool.description,
-    parameters: { ...document.schema, $defs: document.definitions },
+    parameters: toolParameters(tool.input),
     replay: tool.replaySafe ? "safe" : "unsafe",
     execute: (args, api, context) =>
       Effect.runPromise(

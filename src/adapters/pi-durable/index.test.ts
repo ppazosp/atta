@@ -8,7 +8,7 @@ import { describe, expect, it } from "@effect/vitest"
 import { Deferred, Effect, Fiber, Layer, Schema } from "effect"
 import { defineRouterTool, ToolError } from "../../core/domain/tool.ts"
 import { EngineError, RouterEngine, RouterTools } from "../../ports/RouterEngine.ts"
-import { PiDurableRouterEngineLayer } from "./index.ts"
+import { PiDurableRouterEngineLayer, toolParameters } from "./index.ts"
 import { input, temporaryDirectory, testEngine } from "./test-support.ts"
 
 const reply = defineRouterTool({
@@ -454,4 +454,29 @@ describe("Pi Durable router", () => {
       expect(second.faux.state.callCount).toBe(1)
     }).pipe(Effect.scoped),
   )
+})
+
+describe("tool parameters", () => {
+  it("gives a tool without arguments an object schema, which OpenAI requires", () => {
+    expect(toolParameters(Schema.Struct({}))).toEqual({
+      type: "object",
+      properties: {},
+      additionalProperties: false,
+    })
+  })
+
+  it("puts a named schema's object at the top", () => {
+    const named = Schema.Struct({ count: Schema.Number }).annotate({ identifier: "Count" })
+    const parameters = toolParameters(named)
+    expect(parameters).toMatchObject({ type: "object", required: ["count"] })
+    expect(parameters).not.toHaveProperty("$ref")
+  })
+
+  it("keeps an object schema as Effect renders it", () => {
+    expect(toolParameters(Schema.Struct({ text: Schema.String }))).toMatchObject({
+      type: "object",
+      properties: { text: { type: "string" } },
+      required: ["text"],
+    })
+  })
 })

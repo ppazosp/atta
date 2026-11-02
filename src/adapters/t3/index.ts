@@ -2,7 +2,8 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import type { OAuthClientProvider } from "@modelcontextprotocol/sdk/client/auth.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js"
-import { Effect, Layer, Schema } from "effect"
+import { McpError } from "@modelcontextprotocol/sdk/types.js"
+import { Effect, Layer, Ref, Schema, Semaphore } from "effect"
 import type { RuntimeRef } from "../../core/domain/ids.ts"
 import type { RunOutcome, Step, StepKind, StepStatus } from "../../core/domain/worker.ts"
 import { Runtime, RuntimeError } from "../../ports/Runtime.ts"
@@ -19,11 +20,12 @@ import {
   ToolResult,
 } from "./schemas.ts"
 
-export { fileOAuthProvider } from "./oauth.ts"
+export { fileOAuthProvider, T3_REDIRECT_URL } from "./oauth.ts"
 export type T3RuntimeConfig = typeof Config.Type
 
 interface Options {
-  readonly transport?: Transport
+  /** A transport, or a function that makes a fresh one for each connection (tests use it to restart T3). */
+  readonly transport?: Transport | (() => Transport)
   readonly oauthProvider?: OAuthClientProvider
 }
 
@@ -80,6 +82,37 @@ const outcomeOf = (status: Item["status"]): RunOutcome | null => {
   }
 }
 
+const planStatus = { pending: "pending", running: "in_progress", completed: "complete" } as const
+
+/**
+ * Codex's plan (its plan tool) arrives as one `todo_list` item per run, updated in place, whose text lists the
+ * steps as `[status] text`. Each step becomes its own step here, with an ID stable across updates.
+ */
+const planStepsOf = (item: Item & { readonly runId: NonNullable<Item["runId"]> }): Array<Step> =>
+  (item.text ?? "").split(/\r?\n/).flatMap((line, index) => {
+    const match = /^\[(pending|running|completed)\]\s+(.+)$/.exec(line.trim())
+    if (match === null) return []
+    const [, status, text] = match as unknown as [string, keyof typeof planStatus, string]
+    return [
+      {
+        id: `${item.itemId}#${index}`,
+        position: item.position,
+        runId: item.runId,
+        kind: "plan_step" as const,
+        status: planStatus[status],
+        title: text.slice(0, 120),
+        detail: null,
+      },
+    ]
+  })
+
+const stepsOf = (item: Item): Array<Step> => {
+  if (item.runId === null) return []
+  if (item.type === "todo_list") return planStepsOf({ ...item, runId: item.runId })
+  const step = stepOf(item)
+  return step === null ? [] : [step]
+}
+
 const stepOf = (item: Item): Step | null =>
   item.runId === null
     ? null
@@ -92,6 +125,8 @@ const stepOf = (item: Item): Step | null =>
         title: (item.title?.trim() || item.text?.split(/\r?\n/, 1)[0]?.trim() || item.type).slice(0, 120),
         detail: item.text || null,
       }
+
+const closeQuietly = (client: Client) => Effect.tryPromise(() => client.close()).pipe(Effect.ignore)
 
 const describeCause = (cause: unknown) =>
   (cause instanceof Error ? cause.message : typeof cause === "string" ? cause : String(cause)).slice(0, 500)
@@ -130,20 +165,41 @@ export const T3RuntimeLayer = (input: T3RuntimeConfig, options: Options = {}) =>
       })
       if (!tokens?.access_token) return yield* signInRequired(config.tokenDirectory)
 
-      const client = yield* Effect.acquireRelease(
-        Effect.sync(() => new Client({ name: "atta", version: "0.0.0" })),
-        (connection) => Effect.tryPromise(() => connection.close()).pipe(Effect.ignore),
-      )
-      const transport =
-        options.transport ?? new StreamableHTTPClientTransport(url, { authProvider: provider })
-      yield* Effect.tryPromise({
-        try: (signal) => client.connect(transport, { signal }),
+      const makeTransport = (): Transport =>
+        typeof options.transport === "function"
+          ? options.transport()
+          : (options.transport ?? new StreamableHTTPClientTransport(url, { authProvider: provider }))
+      const open = Effect.tryPromise({
+        try: async (signal) => {
+          const client = new Client({ name: "atta", version: "0.0.0" })
+          await client.connect(makeTransport(), { signal })
+          return client
+        },
         catch: () =>
           new RuntimeError({
             operation: "connect",
             message: "Cannot connect to T3 MCP. Check the endpoint and sign in with full access.",
           }),
       })
+      const connection = yield* Ref.make(yield* open)
+      yield* Effect.addFinalizer(() => Ref.get(connection).pipe(Effect.flatMap(closeQuietly)))
+      const reconnecting = yield* Semaphore.make(1)
+      /**
+       * T3 can restart under atta (an update, a crash, launchd). Its old session is then gone, so a call that
+       * fails on the connection opens a new one once. Calls racing here share a single reconnect.
+       */
+      const reconnect = (failed: Client) =>
+        reconnecting.withPermits(1)(
+          Effect.gen(function* () {
+            const current = yield* Ref.get(connection)
+            if (current !== failed) return current
+            yield* closeQuietly(failed)
+            const fresh = yield* open
+            yield* Ref.set(connection, fresh)
+            yield* Effect.logInfo("reconnected to T3")
+            return fresh
+          }),
+        )
 
       const call = Effect.fn("T3Runtime.call")(function* <A>(
         operation: string,
@@ -157,10 +213,20 @@ export const T3RuntimeLayer = (input: T3RuntimeConfig, options: Options = {}) =>
             operation,
             message: `T3 ${name} failed or returned an invalid response${cause === undefined ? "" : `: ${describeCause(cause)}`}`,
           })
-        const raw = yield* Effect.tryPromise({
-          try: (signal) => client.callTool({ name, arguments: args }, undefined, { signal }),
-          catch: failure,
-        })
+        const attempt = (client: Client) =>
+          Effect.tryPromise({
+            try: (signal) => client.callTool({ name, arguments: args }, undefined, { signal }),
+            catch: (cause) => cause,
+          })
+        const client = yield* Ref.get(connection)
+        const raw = yield* attempt(client).pipe(
+          // An error T3 sent back is an answer; any other failure means the connection is gone.
+          Effect.catch((cause) =>
+            cause instanceof McpError
+              ? Effect.fail(failure(cause))
+              : reconnect(client).pipe(Effect.flatMap(attempt), Effect.mapError(failure)),
+          ),
+        )
         const result = yield* Schema.decodeUnknownEffect(ToolResult)(raw).pipe(Effect.mapError(failure))
         if (result.isError) {
           return yield* failure(result.content?.find((block) => block.type === "text")?.text ?? "tool error")
@@ -276,7 +342,7 @@ export const T3RuntimeLayer = (input: T3RuntimeConfig, options: Options = {}) =>
             },
             ActivityPage,
           )
-          const steps = page.items.map(stepOf).filter((step) => step !== null)
+          const steps = page.items.flatMap(stepsOf)
           const unfinished = steps.find((step) => step.status === "pending" || step.status === "in_progress")
           const nextPosition =
             unfinished === undefined ? (page.nextPosition ?? afterPosition) : unfinished.position - 1

@@ -14,15 +14,16 @@ export const planContent = Effect.fn("Slack.planContent")(function* (
   answer: string | null = null,
 ) {
   let visible = [...tasks]
-  if (tasks.length > 50) {
-    const count = tasks.length - 49
+  // A message holds at most 50 blocks: the title, the answer and up to 48 cards.
+  if (tasks.length > 48) {
+    const count = tasks.length - 47
     const finished = tasks
       .filter((task) => task.status === "complete" || task.status === "error")
       .slice(0, count)
     if (finished.length < count) {
       return yield* new ChannelError({
         operation: "plan",
-        message: "More than 49 unfinished tasks cannot fit alongside a summary task",
+        message: "More than 47 unfinished tasks cannot fit alongside a summary task",
       })
     }
     const grouped = new Set(finished)
@@ -40,25 +41,31 @@ export const planContent = Effect.fn("Slack.planContent")(function* (
       ...tasks.filter((task) => !grouped.has(task)),
     ]
   }
+  // Slack's timeline style: a title line, then one task card per step that has started. A card shows its own
+  // spinner, ✓ or ⚠️ (a step inside a plan block shows only a dot when done). Cards cannot be pending, so
+  // steps the worker has not started yet are left out until it starts them.
+  const cards = visible.filter((task) => task.status !== "pending")
   const blocks: Blocks = [
-    {
-      type: "plan",
-      title,
-      tasks: visible.map((task) => ({
-        type: "task_card",
-        task_id: task.id,
-        title: task.title,
-        status: task.status,
-        ...(task.detail === null
-          ? {}
-          : {
-              details: {
-                type: "rich_text",
-                elements: [{ type: "rich_text_section", elements: [{ type: "text", text: task.detail }] }],
-              },
-            }),
-      })),
-    },
+    { type: "section", text: { type: "mrkdwn", text: `*${escapeMrkdwn(title)}*` } },
+    ...cards.map((task) => ({
+      type: "task_card" as const,
+      task_id: task.id,
+      title: task.title,
+      status: task.status as "in_progress" | "complete" | "error",
+      ...(task.detail === null
+        ? {}
+        : {
+            details: {
+              type: "rich_text" as const,
+              elements: [
+                {
+                  type: "rich_text_section" as const,
+                  elements: [{ type: "text" as const, text: task.detail }],
+                },
+              ],
+            },
+          }),
+    })),
   ]
   // Rich text is never parsed as markup, so a model's answer cannot hide a link or ping anyone.
   if (answer) {

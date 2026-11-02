@@ -5,8 +5,7 @@
     "src/ports/*.ts",
     "src/core/domain/*.ts",
     "test/fakes/*.ts",
-    "atta.config.example.ts",
-    "src/core/run.ts"
+    "atta.config.example.ts"
   ],
   "project": ["src/**/*.ts", "test/**/*.ts", "atta.config.example.ts"],
   "ignore": [".repos/**"],
