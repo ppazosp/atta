@@ -107,6 +107,7 @@ export class Tracker extends Context.Service<
           for (const step of mine) {
             if (!shownWithoutPlan.has(step.kind)) continue
             const task: PlanTask = { id: step.id, title: taskTitle(step), status: step.status, detail: null }
+            // Under a plan, each action is shown as a detail of the step that was running when it happened.
             const index = steps.findIndex((t) => t.id === step.id)
             steps = index === -1 ? [...steps, task] : steps.map((t, i) => (i === index ? task : t))
             changed = true

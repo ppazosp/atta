@@ -85,4 +85,6 @@ Tested in the proof workspace with plans posted by atta's bot, judged by eye in 
 - The plan's header icon follows from its tasks: a spinner while any task is in progress, ⚠️ when any task has an error, and a ✓ when every task is complete. This holds for a plan edited with `chat.update` as much as for a streamed one, so the ✓ needs no streaming.
 - Stopping a stream turns its unfinished tasks into errors, but a `chat.update` straight after restores them (a spinner again on the running task).
 
-So atta edits its plan message with `chat.update`, and at the end of a run sets every task to `complete` (or unfinished ones to `error` when the run did not complete). Failed intermediate commands are not shown as errors, so they do not put ⚠️ on a plan that succeeded.
+- A standalone `task_card` (outside a plan block) draws its own icon: a spinner while in progress, ✓ when complete, ⚠️ on error. Slack rejects `pending` for a standalone card (`must be a valid enum value`), and standalone cards have no connecting line between them.
+
+So atta shows a worker's progress as a bold title line followed by one standalone task card per step of the worker's own plan that has started, edited with `chat.update`: each finished step gets Slack's ✓, and steps not yet started appear when they start. At the end of a run, unfinished steps become `complete` (or `error` when the run did not complete). Failed intermediate commands are not shown as errors, and steps carry no details: the step titles are the progress.

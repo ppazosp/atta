@@ -37,7 +37,20 @@ const PlanBlock = Schema.Struct({
 })
 const blocksOf = (input: unknown) =>
   Schema.decodeUnknownSync(Schema.Struct({ blocks: Schema.Array(Schema.Unknown) }))(input).blocks
-const planOf = (input: unknown) => Schema.decodeUnknownSync(PlanBlock)(blocksOf(input)[0])
+const Section = Schema.Struct({
+  type: Schema.Literal("section"),
+  text: Schema.Struct({ text: Schema.String }),
+})
+/** Reads the plan back from its title line and task cards, in the shape the plan block used to have. */
+const planOf = (input: unknown) => {
+  const blocks = blocksOf(input) as ReadonlyArray<{ readonly type: string }>
+  const title = Schema.decodeUnknownSync(Section)(blocks[0]).text.text.replace(/^\*(.*)\*$/, "$1")
+  const tasks = blocks.filter((block) => block.type === "task_card")
+  return Schema.decodeUnknownSync(PlanBlock)({ type: "plan", title, tasks })
+}
+/** The answer block, after the cards. */
+const answerOf = (input: unknown) =>
+  (blocksOf(input) as ReadonlyArray<{ readonly type: string }>).find((b) => b.type === "rich_text")
 
 describe("Slack plans", () => {
   it.effect("posts a tagged plan once with task cards and rich text details", () => {
@@ -66,7 +79,6 @@ describe("Slack plans", () => {
         type: "plan",
         title: initial.title,
         tasks: [
-          { type: "task_card", task_id: "task-1", title: "Task 1", status: "pending" },
           {
             type: "task_card",
             task_id: "task-2",
@@ -83,7 +95,8 @@ describe("Slack plans", () => {
           { type: "task_card", task_id: "task-4", title: "Task 4", status: "error" },
         ],
       })
-      expect(blocksOf(fake.calls.post[0])).toHaveLength(1)
+      // The title line and the three started steps; the pending step waits until it starts.
+      expect(blocksOf(fake.calls.post[0])).toHaveLength(4)
     }).pipe(Effect.provide(fake.layer))
   })
 
@@ -195,11 +208,11 @@ describe("Slack plans", () => {
     }).pipe(Effect.provide(fake.layer))
   })
 
-  it.effect("preserves exactly 50 tasks without grouping", () => {
+  it.effect("preserves exactly 48 tasks without grouping", () => {
     const fake = makeFakeSlack()
     return Effect.gen(function* () {
       const channel = yield* Channel
-      const tasks = Array.from({ length: 50 }, (_, i) => task(i))
+      const tasks = Array.from({ length: 48 }, (_, i) => task(i))
       yield* channel.upsertPlan({ ...initial, tasks })
       expect(planOf(fake.calls.post[0]).tasks.map((t) => t.task_id)).toEqual(tasks.map((t) => t.id))
     }).pipe(Effect.provide(fake.layer))
@@ -213,11 +226,11 @@ describe("Slack plans", () => {
         task(0, "in_progress"),
         task(1, "error"),
         task(2),
-        ...Array.from({ length: 49 }, (_, i) => task(i + 3)),
+        ...Array.from({ length: 47 }, (_, i) => task(i + 3)),
       ]
       yield* channel.upsertPlan({ ...initial, tasks })
       const actual = planOf(fake.calls.post[0]).tasks
-      expect(actual).toHaveLength(50)
+      expect(actual).toHaveLength(48)
       expect(actual[0]).toMatchObject({ title: "3 earlier tasks finished (1 failed)", status: "error" })
       expect(actual.slice(1).map((t) => t.task_id)).toEqual(["task-0", ...tasks.slice(4).map((t) => t.id)])
     }).pipe(Effect.provide(fake.layer))
@@ -227,7 +240,7 @@ describe("Slack plans", () => {
     const fake = makeFakeSlack()
     return Effect.gen(function* () {
       const channel = yield* Channel
-      yield* channel.upsertPlan({ ...initial, tasks: Array.from({ length: 51 }, (_, i) => task(i)) })
+      yield* channel.upsertPlan({ ...initial, tasks: Array.from({ length: 49 }, (_, i) => task(i)) })
       expect(planOf(fake.calls.post[0]).tasks[0]).toMatchObject({
         title: "2 earlier tasks finished",
         status: "complete",
@@ -241,12 +254,12 @@ describe("Slack plans", () => {
       const channel = yield* Channel
       const tasks = [
         { ...task(0, "in_progress"), id: "atta_finished_summary" },
-        ...Array.from({ length: 50 }, (_, i) => task(i + 1)),
+        ...Array.from({ length: 48 }, (_, i) => task(i + 1)),
       ]
       yield* channel.upsertPlan({ ...initial, tasks })
       const ids = planOf(fake.calls.post[0]).tasks.map((t) => t.task_id)
-      expect(ids).toHaveLength(50)
-      expect(new Set(ids).size).toBe(50)
+      expect(ids).toHaveLength(48)
+      expect(new Set(ids).size).toBe(48)
     }).pipe(Effect.provide(fake.layer))
   })
 
@@ -278,7 +291,7 @@ describe("Slack plans", () => {
           title: initial.title,
           tasks: [{ status: "complete" }],
         })
-        expect(blocksOf(fake.calls.update[0])[1]).toEqual({
+        expect(answerOf(fake.calls.update[0])).toEqual({
           type: "rich_text",
           elements: [{ type: "rich_text_section", elements: [{ type: "text", text: finish.answer }] }],
         })
@@ -294,7 +307,9 @@ describe("Slack plans", () => {
     return Effect.gen(function* () {
       const channel = yield* Channel
       yield* channel.finishPlan({ ...finish, answer: null })
-      expect(blocksOf(fake.calls.update[0])).toHaveLength(1)
+      // The title line and the finished step, with no answer block.
+      expect(blocksOf(fake.calls.update[0])).toHaveLength(2)
+      expect(answerOf(fake.calls.update[0])).toBeUndefined()
     }).pipe(Effect.provide(fake.layer))
   })
 
