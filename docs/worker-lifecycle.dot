@@ -1,4 +1,4 @@
-// Atta v0: the life of one worker, as Atta's worker manager and tracker see it.
+// atta v0: the life of one worker, as atta's worker manager and tracker see it.
 // Render: dot -Tsvg worker-lifecycle.dot -o worker-lifecycle.svg && rsvg-convert -z 1.6 worker-lifecycle.svg -o worker-lifecycle.png
 digraph worker {
   graph [rankdir=LR, fontname="Helvetica", nodesep=0.5, ranksep=0.7, pad=0.3, bgcolor="white",

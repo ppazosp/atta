@@ -1,8 +1,8 @@
-// Atta architecture: core with interfaces (ports), adapters, T3 Code for workers, Pi Durable for the router.
+// atta architecture: core with interfaces (ports), adapters, T3 Code for workers, Pi Durable for the router.
 // Render: dot -Tsvg architecture.dot -o architecture.svg && rsvg-convert -z 1.6 architecture.svg -o architecture.png
 digraph atta {
   graph [rankdir=TB, fontname="Helvetica", nodesep=0.28, ranksep=0.5, pad=0.3, bgcolor="white", newrank=true,
-         label=<<b>Atta architecture</b><br/><font point-size="12" color="#666666">solid = v0   ·   dashed = later   ·   core never imports an adapter   ·   all on your Mac</font>>, labelloc=t, fontsize=20];
+         label=<<b>atta architecture</b><br/><font point-size="12" color="#666666">solid = v0   ·   dashed = later   ·   core never imports an adapter   ·   all on your Mac</font>>, labelloc=t, fontsize=20];
   node  [shape=box, style="rounded,filled", fontname="Helvetica", fontsize=11, penwidth=1.2, margin="0.14,0.07"];
   edge  [fontname="Helvetica", fontsize=9, color="#555555", arrowsize=0.7];
 
@@ -29,15 +29,15 @@ digraph atta {
 
   // ---------- Core ----------
   subgraph cluster_core {
-    label=<<b>Atta core</b>  <font point-size="10">domain logic only · Effect services</font>>;
+    label=<<b>atta core</b>  <font point-size="10">domain logic only · Effect services</font>>;
     style="rounded,filled"; color="#2b6cb0"; fillcolor="#ebf4ff";
     node [fillcolor="#ffffff", color="#2b6cb0"];
 
     p_channel [label=<<b>Channel port</b>>, shape=cds, fillcolor="#dbeafe"];
     filter    [label=<<b>Filter</b><br/><font point-size="9">fast path in code: duplicates · bursts<br/>v0: only your own messages</font>>];
     dispatch  [label=<<b>Dispatch</b><br/><font point-size="9">thread has a worker → straight to it<br/>otherwise → router</font>>];
-    router    [label=<<b>Router</b><br/><font point-size="9">lean · no shell · only Atta tools<br/>prompt · context · uses memory<br/>gpt-6.1-terra · medium</font>>, penwidth=2.2, fillcolor="#fffbea", color="#b7791f"];
-    api       [label=<<b>Atta tools</b><br/><font point-size="9">start / message / stop worker · reply · react<br/>subscribe(thread, worker) · ask · remember (later)</font>>];
+    router    [label=<<b>Router</b><br/><font point-size="9">lean · no shell · only atta tools<br/>prompt · context · uses memory<br/>gpt-6.1-terra · medium</font>>, penwidth=2.2, fillcolor="#fffbea", color="#b7791f"];
+    api       [label=<<b>atta tools</b><br/><font point-size="9">start / message / stop worker · reply · react<br/>subscribe(thread, worker) · ask · remember (later)</font>>];
     sessions  [label=<<b>Worker manager</b><br/><font point-size="9">launch: sol · xhigh · own worktree · brief<br/>send · steer · stop</font>>];
     tracker   [label=<<b>Worker tracker</b><br/><font point-size="9">reads each worker's steps<br/>→ Slack plan updates · finished event</font>>];
     watchdog  [label=<<b>Watchdog</b><br/><font point-size="9">stuck · silent · auto-resubmit</font>>, style="rounded,filled,dashed"];
@@ -53,7 +53,7 @@ digraph atta {
     label=<<b>App</b>  <font point-size="10">config · wiring (Layers) · one process</font>>;
     style="rounded,filled"; color="#4a5568"; fillcolor="#f7fafc";
     node [fillcolor="#ffffff", color="#4a5568"];
-    mcpserver [label=<<b>Atta MCP server</b><br/><font point-size="9">localhost · same tools, scoped per caller<br/>workers: ask · report   ·   your agents: more</font>>, penwidth=2];
+    mcpserver [label=<<b>atta MCP server</b><br/><font point-size="9">localhost · same tools, scoped per caller<br/>workers: ask · report   ·   your agents: more</font>>, penwidth=2];
   }
 
   // ---------- Adapters ----------

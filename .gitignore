@@ -9,3 +9,5 @@ logs/
 *.sqlite-*
 .DS_Store
 coverage/
+# Your own config. The repository has atta.config.example.ts.
+atta.config.ts
