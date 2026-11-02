@@ -71,6 +71,3 @@ export const metadata = (operationId: string) => ({
  */
 export const escapeMrkdwn = (text: string) =>
   text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-
-/** Markdown blocks do not decode entities, so break Slack's special `<!…>`, `<@…>`, `<#…>` and `<http…>` forms instead. */
-export const neutralizeMarkdown = (text: string) => text.replace(/<(?=[!@#]|https?:|mailto:)/g, "<\u200b")

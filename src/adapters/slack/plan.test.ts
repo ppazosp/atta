@@ -278,7 +278,10 @@ describe("Slack plans", () => {
           title: `${initial.title} — ${outcome}`,
           tasks: [{ status: "complete" }],
         })
-        expect(blocksOf(fake.calls.update[0])[1]).toEqual({ type: "markdown", text: finish.answer })
+        expect(blocksOf(fake.calls.update[0])[1]).toEqual({
+          type: "rich_text",
+          elements: [{ type: "rich_text_section", elements: [{ type: "text", text: finish.answer }] }],
+        })
         expect(fake.calls.update[0]).toMatchObject({
           text: `${initial.title} — ${outcome}\n\n${finish.answer}`,
         })
