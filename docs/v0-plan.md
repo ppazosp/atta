@@ -139,9 +139,11 @@ atta's SQLite file is the source of truth. Pi Durable keeps only the router's co
 6. The worker manager launches the worker through the T3 adapter, and posts the plan message in the thread.
 7. The worker tracker reads the worker's steps from T3 by position. It updates the plan message at most once a second.
 8. When the run ends, the tracker stores a "worker finished" event with the worker's final message. Dispatch sends it to the router.
-9. The router replies in the thread with the result. Core swaps 👀 for ✅.
+9. The router replies in the thread with the result.
 
-Each step writes its state change, its new events and its outbox entries in one transaction. The outside action (a Slack post, a T3 launch) happens after the commit and is marked done when it returns.
+👀 means atta has your message. It becomes ✅ when atta has handled it: the router answered, or a worker took it. The plan message, not the reaction, shows the work going on. Events reach the router as queued inputs, one after another; v0 does not steer the router mid-turn.
+
+Each step writes its state change, its new events and its outbox entries in one transaction. The outside action (a Slack post, a T3 launch) happens after the commit. Its result is recorded in the same transaction that marks the outbox entry done: a worker's new run, for example, lands together with its state change. Every operation on one worker holds that worker's lock and rereads its state, so a message, a stop and the tracker never act on a stale worker.
 
 ### Recovery after a crash
 
@@ -151,6 +153,8 @@ At startup, atta finishes what a crash cut short:
 - deliveries not marked done are delivered again. The router ignores a repeated request ID
 - each worker that is running or launching is checked with `status`. The tracker rebuilds its plan message by reading the current run's steps from the start (T3 keeps them), then goes on reading from the end
 - Pi Durable resumes the router's own unfinished turn, as the router proof showed
+- known gap: an event the router was still answering when atta died keeps its 👀; the answer itself still arrives
+- known gap: if a worker's run ends in the instant between atta checking it and a steer arriving, and T3 turns the steer into a new run, atta keeps following the old run and logs a warning
 
 ### The router
 

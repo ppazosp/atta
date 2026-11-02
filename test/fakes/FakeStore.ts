@@ -99,6 +99,7 @@ export const makeFakeStore = Effect.gen(function* () {
     },
     threads: {
       touch: (key, at) => update((s) => ({ ...s, threads: new Map(s.threads).set(key, at) })),
+      exists: (key) => read((s) => s.threads.has(key)),
     },
     workers: {
       insert: (worker) => update((s) => ({ ...s, workers: new Map(s.workers).set(worker.id, worker) })),

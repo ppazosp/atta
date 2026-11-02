@@ -97,6 +97,13 @@ const make = Effect.gen(function* () {
         Effect.asVoid,
         Effect.mapError(storeError("threads.touch")),
       ),
+      exists: Effect.fn("Store.threads.exists")(
+        function* (key: ThreadKey) {
+          const rows = yield* sql`SELECT 1 AS found FROM threads WHERE key = ${key} LIMIT 1`
+          return rows.length > 0
+        },
+        Effect.mapError(storeError("threads.exists")),
+      ),
     },
     workers: {
       insert: Effect.fn("Store.workers.insert")(

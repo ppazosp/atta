@@ -39,7 +39,10 @@ export class Runtime extends Context.Service<
       readonly brief: Brief
       readonly operationId: OperationId
     }): Effect.Effect<Launched, RuntimeError>
-    /** Steers the running run, or queues a new run. Returns the run the message went to. */
+    /**
+     * Steers the running run, or queues a new run. Returns the run the message went to. A repeated `operationId`
+     * returns the first result without sending again (T3's `clientRequestId`).
+     */
     send(input: {
       readonly worker: RuntimeRef
       readonly text: string
