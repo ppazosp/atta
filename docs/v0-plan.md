@@ -84,50 +84,53 @@ atta/
 
 ### Interfaces
 
-Each interface is an Effect service. Signatures are a first draft and will tighten when we write them.
+Each interface is an Effect service. WP0 writes them as code; the lists below say what each must carry.
 
 - Channel:
-  - `events: Stream<InboundEvent>`
-  - `reply(thread, text)`
-  - `react(message, emoji)`
+  - `events: Stream<InboundEvent>`. Every event says where it came from (see routing below)
+  - `reply(thread, text, operationId)`. Tags the Slack message with the operation ID, so recovery can find it
+  - `react(message, emoji)` and `unreact(message, emoji)`
   - `upsertPlan(thread, planId, title, tasks)`
-  - `finishPlan(thread, planId, answer)`
+  - `finishPlan(thread, planId, outcome, answer)`, where outcome is completed, failed, interrupted or stopped
 - RouterEngine:
   - `submit({ requestId, content, whenBusy })`
   - `settled(requestId)`
+  - it runs the router tools defined in core, through a tool contract WP0 defines: name, description, input schema, whether it is safe to repeat, and a handler that is an Effect
 - Runtime:
-  - `launch({ repo, title, brief })` returns a worker reference
-  - `send(worker, text, "steer" | "queue")`
+  - `launch({ repo, title, brief, operationId })` returns the worker reference, the run ID, the branch and the worktree path. T3 ignores a repeated `operationId` (its `clientRequestId`), so a launch is safe to repeat
+  - `send(worker, text, "steer" | "queue")` returns the run ID it went to
   - `stop(worker)`
-  - `steps(worker, afterPosition)` returns steps and the next position
-  - `status(worker)`
+  - `steps(worker, afterPosition)` returns steps and the next position. On the last page T3 returns no next position, so the caller keeps its own
+  - `status(worker)` returns the run state, the run ID, the current branch and the latest commit
 - Memory:
   - `recall(query)`
   - `remember(fact)`, which does nothing in v0
-- Store: one repository per table (see below), with every write in a transaction.
+- Store: one repository per table, and `transaction(effect)` so a group of writes lands together or not at all.
+- WorkerApi (used by atta's MCP server): `ask(workerId, question)` and `report(workerId, text)`. Core implements it; WP7 exposes it.
 
 ### Stored data
 
 atta's SQLite file is the source of truth. Pi Durable keeps only the router's conversation, in its own SQLite file.
 
-| Table                | Holds                                                                                                     | Notes                                                                          |
-| -------------------- | --------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| `events`             | every inbound event: Slack message, scheduled prompt, worker step summary, worker report, worker finished | append-only. Unique on source and external ID, so a Slack retry is stored once |
-| `threads`            | one row per conversation thread, keyed like `slack:T01/D01/1700000000.000100`                             | channel, title, last activity                                                  |
-| `workers`            | one row per worker: T3 thread ID, repo, brief, state, last read position, plan message reference          | state follows the statechart                                                   |
-| `worker_transitions` | every state change, with reason and time                                                                  | append-only                                                                    |
-| `subscriptions`      | which worker listens to which thread                                                                      | many-to-many, as in the article                                                |
-| `deliveries`         | where each event went (router or a worker) and whether it arrived                                         | gives at-least-once delivery after a crash                                     |
+| Table                | Holds                                                                                                     | Notes                                                                              |
+| -------------------- | --------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `events`             | every inbound event: Slack message, scheduled prompt, worker step summary, worker report, worker finished | append-only. Unique on source and external ID, so a Slack retry is stored once     |
+| `threads`            | one row per conversation thread, keyed like `slack:T01/D01/1700000000.000100`                             | channel, title, last activity                                                      |
+| `workers`            | one row per worker: T3 thread ID, repo, brief, state, last read position, plan message reference          | state follows the statechart                                                       |
+| `worker_transitions` | every state change, with reason and time                                                                  | append-only                                                                        |
+| `subscriptions`      | which worker listens to which thread                                                                      | many-to-many, as in the article                                                    |
+| `deliveries`         | where each event went (router or a worker) and whether it arrived                                         | gives at-least-once delivery after a crash                                         |
+| `outbox`             | every action atta takes outside: Slack posts and reactions, worker launches, steers and stops             | each has a stable operation ID, a status and the result (Slack message, T3 thread) |
 
 ### Flow of one message
 
 1. The Slack adapter receives your message and stores it as an event. It ignores duplicates by Slack event ID.
-2. The filter keeps it only if it comes from your Slack user ID. v0 drops everything else and logs it.
+2. The filter applies to Slack messages only: it keeps one if it comes from your Slack user ID, and drops and logs the rest. Events atta creates itself (scheduled prompts, worker reports, worker finished) are trusted by kind.
 3. Core adds a 👀 reaction straight away, without waiting for a model.
-4. Dispatch checks the thread:
-   - if a running worker is subscribed, the message goes straight to it as a steer
-   - if an idle worker is subscribed, it goes to that worker as a new run
-   - otherwise it goes to the router
+4. Dispatch routes by event kind:
+   - your message saying only "stop" stops the thread's workers, without the router
+   - your other messages go to the thread's subscribed worker: as a steer while it runs, as a new run while it is idle. With no worker, or more than one, they go to the router
+   - scheduled prompts, worker reports and "worker finished" always go to the router
 5. The router gets the event as one input. It answers with tools:
    - `reply` posts in the thread and ends the router's run, which saves the closing model turn the proof showed
    - `start_worker` launches a worker and subscribes it to the thread
@@ -135,6 +138,17 @@ atta's SQLite file is the source of truth. Pi Durable keeps only the router's co
 7. The worker tracker reads the worker's steps from T3 by position. It updates the plan message at most once a second.
 8. When the run ends, the tracker stores a "worker finished" event with the worker's final message. Dispatch sends it to the router.
 9. The router replies in the thread with the result. Core swaps 👀 for ✅.
+
+Each step writes its state change, its new events and its outbox entries in one transaction. The outside action (a Slack post, a T3 launch) happens after the commit and is marked done when it returns.
+
+### Recovery after a crash
+
+At startup, atta finishes what a crash cut short:
+
+- outbox entries still pending are retried. A T3 launch is safe to repeat because T3 ignores a repeated request ID. Before reposting to Slack, atta looks for a message tagged with the same operation ID in the thread and reuses it
+- deliveries not marked done are delivered again. The router ignores a repeated request ID
+- each worker that is running or launching is checked with `status`, and the tracker reads on from its stored position
+- Pi Durable resumes the router's own unfinished turn, as the router proof showed
 
 ### The router
 
@@ -183,7 +197,7 @@ v0 trusts the worker ID that the brief gives each worker. Real per-caller authen
 
 ### Configuration
 
-`atta.config.ts` is typed and checked at startup with Effect Schema. It holds:
+`atta.config.ts` is typed and checked at startup with Effect Schema. It holds your own Slack and repository details, so git ignores it. The repository has `atta.config.example.ts` instead. It holds:
 
 - Slack app tokens, read from the macOS Keychain or a `.env` file that git ignores
 - your Slack user ID, as the only trusted sender
@@ -246,22 +260,23 @@ At most three Codex workers run at once. That keeps the shared usage limit and t
 
 ### Work packages
 
-| ID  | Package                                                                                                                                                                                                            | Builder | Owns                                                                  | Done when                                                                                                                     |
-| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------- | --------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| WP0 | Contracts: domain types and schemas (event, thread key, worker, brief, step), the five ports as Effect services, the worker statechart as a pure transition function, the config schema, and a fake for every port | Claude  | `src/ports`, `src/core/domain`, `test/fakes`                          | types compile. The statechart test covers every arrow in the [statechart](worker-lifecycle.png). Codex has reviewed it        |
-| WP1 | SQLite store: migrations for the 6 tables, one repository per table, transactions, duplicate-event protection                                                                                                      | Codex   | `src/adapters/sqlite`                                                 | tests on a temporary database cover duplicate events, transitions and delivery records                                        |
-| WP2 | Slack channel: Bolt in Socket Mode to `InboundEvent`, `reply`, `react`, plan messages with `chat.update` at most once a second, grouping above 50 tasks                                                            | Codex   | `src/adapters/slack`                                                  | tests with a fake Slack client cover deduplication, throttling, grouping and thread keys                                      |
-| WP3 | T3 runtime: MCP client with OAuth tokens, `launch`, `send`, `stop`, `steps` by position, `status`                                                                                                                  | Codex   | `src/adapters/t3`                                                     | tests against recorded T3 responses (from the proofs) cover each call, the last-page position and "interrupted" runs          |
-| WP4 | Router engine: Pi Durable harness, atta's tools wrapped as Pi tools, `submit`, `settled`, `reply` ending the run, an `atta login` command for ChatGPT sign-in                                                      | Codex   | `src/adapters/pi-durable`, `src/app/login.ts`                         | tests with Pi's in-memory storage and Pi's `faux` model provider cover tool calls, steering, duplicate request IDs and resume |
-| WP5 | Core logic: filter, dispatch, worker manager, worker tracker (steps to plan tasks, finish detection, branch check), the router's tools, the router prompt                                                          | Claude  | `src/core` (except `domain`)                                          | tests with the WP0 fakes cover flow steps 1 to 9 and scenarios 1, 2, 5, 6 and 11                                              |
-| WP6 | Config loading, the Clock channel (cron prompts to events) and the placeholder memory                                                                                                                              | Codex   | `src/app/config.ts`, `src/adapters/clock`, `src/adapters/memory-none` | tests with Effect's test clock show each prompt fires once per slot, also after a restart                                     |
-| WP7 | atta's MCP server: `ask` and `report` over HTTP on `127.0.0.1`, scoped to workers                                                                                                                                  | Codex   | `src/mcp`                                                             | tests call both tools with the MCP client and check the events they create                                                    |
-| WP8 | Wiring and checkpoints: layers in `src/app`, `main.ts`, launchd services, logs, moving T3's data to `~/.atta/t3`, then the end-to-end scenarios below                                                              | Claude  | `src/app` (except `config.ts` and `login.ts`), `launchd`              | all 11 scenarios pass on your Mac                                                                                             |
+| ID  | Package                                                                                                                                                                                                                                                                                                                                                                                                                                                            | Builder | Owns                                                                                                           | Done when                                                                                                                                        |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------- | -------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| WP0 | Contracts: domain types and schemas (event with its origin, thread key, worker, brief, step, operation ID), the ports and WorkerApi as Effect services, the router tool contract, event routing rules, the worker statechart as a pure transition function, the config schema with `atta.config.example.ts`, a fake for every port, knip entry points for each package, and published test fixtures (recorded T3 responses, sanitized, and the Slack app manifest) | Claude  | `src/ports`, `src/core/domain`, `test/fakes`, `test/fixtures`, `slack/manifest.json`, `atta.config.example.ts` | types compile. The statechart test covers every arrow in the [statechart](worker-lifecycle.png). Codex has reviewed it                           |
+| WP1 | SQLite store: migrations for the 7 tables, one repository per table, `transaction`, duplicate-event protection                                                                                                                                                                                                                                                                                                                                                     | Codex   | `src/adapters/sqlite`                                                                                          | tests on a temporary database cover duplicate events, transitions, deliveries, outbox entries and a transaction that fails halfway               |
+| WP2 | Slack channel: Bolt in Socket Mode to `InboundEvent` for DMs and mentions, `reply` tagged with its operation ID, finding a tagged reply again, `react` and `unreact`, plan messages with `chat.update` at most once a second, grouping above 50 tasks                                                                                                                                                                                                              | Codex   | `src/adapters/slack`                                                                                           | tests with a fake Slack client cover deduplication, DMs and channel mentions, throttling, grouping, thread keys and finding a tagged reply       |
+| WP3 | T3 runtime: MCP client with OAuth tokens, `launch` with a request ID, `send`, `stop`, `steps` by position, `status` with branch and commit                                                                                                                                                                                                                                                                                                                         | Codex   | `src/adapters/t3`                                                                                              | tests against the recorded T3 responses in `test/fixtures/t3` cover each call, a repeated launch, the last-page position and "interrupted" runs  |
+| WP4 | Router engine: Pi Durable harness that runs core's router tools through the WP0 tool contract, `submit`, `settled`, `reply` ending the run, and the ChatGPT sign-in program behind `atta login`                                                                                                                                                                                                                                                                    | Codex   | `src/adapters/pi-durable`                                                                                      | tests with Pi's in-memory storage and Pi's `faux` model provider, using fake tools, cover tool calls, steering, duplicate request IDs and resume |
+| WP5 | Core logic: filter, dispatch by event kind, the outbox and recovery at startup, worker manager, worker tracker (steps to plan tasks, finish detection, branch check), the router's tools and prompt, and WorkerApi                                                                                                                                                                                                                                                 | Claude  | `src/core` (except `domain`)                                                                                   | tests with the WP0 fakes cover flow steps 1 to 9, recovery, and scenarios 1, 2, 5, 6 and 11                                                      |
+| WP6 | Config loading, the Clock channel (cron prompts to events) and the placeholder memory                                                                                                                                                                                                                                                                                                                                                                              | Codex   | `src/app/config.ts`, `src/adapters/clock`, `src/adapters/memory-none`                                          | tests with Effect's test clock show each prompt fires once per slot, also after a restart                                                        |
+| WP7 | atta's MCP server: exposes WorkerApi's `ask` and `report` over HTTP on `127.0.0.1`                                                                                                                                                                                                                                                                                                                                                                                 | Codex   | `src/mcp`                                                                                                      | tests call both tools with the MCP client against a fake WorkerApi                                                                               |
+| WP8 | Wiring and checkpoints: layers in `src/app`, `main.ts` with its commands (`start`, `login`), launchd services, logs, an end-to-end runner that CI never runs (`pnpm e2e`), moving T3's data to `~/.atta/t3`, then the end-to-end scenarios below                                                                                                                                                                                                                   | Claude  | `src/app` (except `config.ts`), `launchd`, `test/e2e`                                                          | all 12 scenarios pass on your Mac                                                                                                                |
 
 ### Rules that keep parallel work safe
 
 - WP0 lands before any wave 2 package starts. Changing a port after that needs a pull request of its own, and every open package rebases onto it.
-- A package changes only the files it owns. Shared files (`package.json`, `pnpm-lock.yaml`, `knip.json`, `docs/v0-plan.md`) change only in WP0 and WP8. A package that needs a new dependency asks first.
+- A package changes only the files it owns. Everything not owned by a package belongs to the coordinator (Claude) and changes only in WP0 and WP8: `package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml`, `tsconfig.json`, `vitest.config.ts`, `knip.json`, lint and format config, CI, `scripts/`, `docs/`. A package that needs a new dependency or a config change asks first.
+- Before a package lands, the coordinator checks that every changed path, tracked or new, is one the package owns.
 - Every dependency the plan needs is already installed and pinned, so wave 2 needs no lockfile changes.
 - Each package lands as one pull request with CI green.
 
@@ -296,6 +311,7 @@ The end-to-end checks run against real Slack, T3 and models. v0 is done when all
 | 9   | A worker runs longer than 10 minutes          | the plan message keeps updating, because it does not use a stream                                                   |
 | 10  | A scheduled prompt is due                     | it runs once, in its configured thread                                                                              |
 | 11  | A worker commits to `main`                    | the thread flags it                                                                                                 |
+| 12  | You mention atta in a channel                 | atta replies in a thread under your message, as it does in a DM                                                     |
 
 ## Risks
 
