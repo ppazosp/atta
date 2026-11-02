@@ -39,7 +39,7 @@ Then invite atta to the channel (`/invite @atta`) and restart atta.
 These were decided without you and are easy to change:
 
 - Only top-level messages and replies in threads atta is not part of are observed. Messages in a thread with an approved worker, from you, still go straight to the worker.
-- The router decides what is worth proposing from its instructions alone. There is no rate limit or "already proposed" check beyond asking the router not to propose the same work twice.
+- The observer decides what is worth proposing from its instructions alone. There is no rate limit or "already proposed" check beyond asking it not to propose the same work twice.
 - A proposal does not expire. A Start click days later still starts the worker.
 - After Start, the worker's result is posted in the channel thread, where the colleague who asked can see it. Replies there from others are observed, not passed to the worker.
 - Every observed message costs one observer turn. In a busy channel that is many turns; a cheaper model or a first filter could come later.
