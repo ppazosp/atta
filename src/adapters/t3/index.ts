@@ -80,6 +80,37 @@ const outcomeOf = (status: Item["status"]): RunOutcome | null => {
   }
 }
 
+const planStatus = { pending: "pending", running: "in_progress", completed: "complete" } as const
+
+/**
+ * Codex's plan (its plan tool) arrives as one `todo_list` item per run, updated in place, whose text lists the
+ * steps as `[status] text`. Each step becomes its own step here, with an ID stable across updates.
+ */
+const planStepsOf = (item: Item & { readonly runId: NonNullable<Item["runId"]> }): Array<Step> =>
+  (item.text ?? "").split(/\r?\n/).flatMap((line, index) => {
+    const match = /^\[(pending|running|completed)\]\s+(.+)$/.exec(line.trim())
+    if (match === null) return []
+    const [, status, text] = match as unknown as [string, keyof typeof planStatus, string]
+    return [
+      {
+        id: `${item.itemId}#${index}`,
+        position: item.position,
+        runId: item.runId,
+        kind: "plan_step" as const,
+        status: planStatus[status],
+        title: text.slice(0, 120),
+        detail: null,
+      },
+    ]
+  })
+
+const stepsOf = (item: Item): Array<Step> => {
+  if (item.runId === null) return []
+  if (item.type === "todo_list") return planStepsOf({ ...item, runId: item.runId })
+  const step = stepOf(item)
+  return step === null ? [] : [step]
+}
+
 const stepOf = (item: Item): Step | null =>
   item.runId === null
     ? null
@@ -276,7 +307,7 @@ export const T3RuntimeLayer = (input: T3RuntimeConfig, options: Options = {}) =>
             },
             ActivityPage,
           )
-          const steps = page.items.map(stepOf).filter((step) => step !== null)
+          const steps = page.items.flatMap(stepsOf)
           const unfinished = steps.find((step) => step.status === "pending" || step.status === "in_progress")
           const nextPosition =
             unfinished === undefined ? (page.nextPosition ?? afterPosition) : unfinished.position - 1

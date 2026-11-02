@@ -190,6 +190,35 @@ describe("core flow", () => {
     }).pipe(Effect.provide(harness)),
   )
 
+  it.effect("shows the worker's own plan instead of its commands, and the latest version of it", () =>
+    Effect.gen(function* () {
+      const runtime = yield* FakeRuntimeControl
+      const { workerId, runtimeRef, runId } = yield* startWorker
+      const step = (
+        id: string,
+        position: number,
+        kind: "plan_step" | "command",
+        title: string,
+        status: "pending" | "in_progress" | "complete" | "error",
+      ) => ({ id, position, runId, kind, title, status, detail: null }) as const
+      yield* runtime.putSteps(runtimeRef, [step("cmd", 1, "command", "$ /bin/zsh -lc 'pytest'", "error")])
+      yield* (yield* Tracker).poll(workerId)
+      // No plan yet: the command shows, and its failure does not look like a failed run.
+      expect((yield* channelCalls("upsertPlan")).at(-1)?.tasks).toMatchObject([
+        { title: "pytest", status: "complete" },
+      ])
+      yield* runtime.putSteps(runtimeRef, [
+        step("plan#1", 2, "plan_step", "Read calc.py", "complete"),
+        step("plan#2", 2, "plan_step", "Add div()", "in_progress"),
+      ])
+      yield* (yield* Tracker).poll(workerId)
+      expect((yield* channelCalls("upsertPlan")).at(-1)?.tasks.map((t) => [t.title, t.status])).toEqual([
+        ["Read calc.py", "complete"],
+        ["Add div()", "in_progress"],
+      ])
+    }).pipe(Effect.provide(harness)),
+  )
+
   it.effect("passes a reply in the thread straight to the running worker (scenario 5)", () =>
     Effect.gen(function* () {
       const router = yield* FakeRouterControl

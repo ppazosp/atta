@@ -52,6 +52,8 @@ export const StepKind = Schema.Literals([
   "message",
   "reasoning",
   "checkpoint",
+  /** One step of the worker's own plan (Codex's plan tool), updated as the worker goes. */
+  "plan_step",
   "other",
 ])
 export type StepKind = typeof StepKind.Type

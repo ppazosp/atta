@@ -22,8 +22,12 @@ const briefFooter = (workerId: WorkerId) =>
     "",
     "---",
     `You are atta worker ${workerId}. atta's MCP server ("atta") is available to you.`,
+    "- Before you start, write a short plan with your plan tool (update_plan): 3 to 7 steps in plain words. Keep it",
+    "  current as you work: mark each step running when you start it and completed when it is done. The user follows",
+    "  your progress through this plan.",
     `- When you need context you do not have, call atta.ask with worker_id "${workerId}".`,
-    `- When you finish, or if you are blocked, call atta.report with worker_id "${workerId}" and a short result.`,
+    `- If you are blocked and need a decision, call atta.report with worker_id "${workerId}" and say what you need.`,
+    "  Do not report when you finish: atta sees that by itself.",
     "- Work on the branch created for you. Do not switch branches and do not commit to main.",
   ].join("\n")
 
