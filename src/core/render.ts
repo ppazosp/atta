@@ -1,5 +1,5 @@
 import type { Event } from "./domain/event.ts"
-import { threadKey } from "./domain/thread.ts"
+import { threadKey, type ThreadKey } from "./domain/thread.ts"
 import type { Worker } from "./domain/worker.ts"
 
 /** The conversation key for a new thread in a conversation: `slack:<team>/<conversation>`. */
@@ -7,7 +7,11 @@ export const conversationKey = (c: { readonly team: string; readonly conversatio
   `slack:${c.team}/${c.conversation}`
 
 /** How an event reads to the router. Every event names the thread or conversation `reply` should answer in. */
-export const renderEvent = (event: Event, worker: Worker | null): string => {
+export const renderEvent = (
+  event: Event,
+  worker: Worker | null,
+  openedThread: ThreadKey | null = null,
+): string => {
   switch (event._tag) {
     case "UserMessage":
       return [
@@ -16,9 +20,11 @@ export const renderEvent = (event: Event, worker: Worker | null): string => {
       ].join("\n")
     case "ScheduledPrompt": {
       const where =
-        "thread" in event.target
-          ? `thread ${threadKey(event.target.thread)}`
-          : `a new thread in ${conversationKey(event.target.conversation)}`
+        openedThread !== null
+          ? `thread ${openedThread}`
+          : "thread" in event.target
+            ? `thread ${threadKey(event.target.thread)}`
+            : `a new thread in ${conversationKey(event.target.conversation)}`
       return [
         `[event ${event.id}] Scheduled prompt "${event.schedule}", answer in ${where}:`,
         event.text,

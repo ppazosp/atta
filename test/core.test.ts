@@ -1,15 +1,18 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Effect, Layer, Option, Schema } from "effect"
+import { Effect, Fiber, Layer, Option, Schema } from "effect"
 import example from "../atta.config.example.ts"
 import { AttaConfig } from "../src/core/domain/config.ts"
 import type { Event } from "../src/core/domain/event.ts"
-import { EventId, Timestamp, type RuntimeRef, type WorkerId } from "../src/core/domain/ids.ts"
+import { EventId, OperationId, Timestamp, type RuntimeRef, type WorkerId } from "../src/core/domain/ids.ts"
 import { threadKey } from "../src/core/domain/thread.ts"
 import { Dispatch } from "../src/core/Dispatch.ts"
 import { Intake } from "../src/core/Intake.ts"
+import { Outbox } from "../src/core/Outbox.ts"
 import { CoreBaseLayer, CoreLayer, recover } from "../src/core/run.ts"
 import { Settings } from "../src/core/Settings.ts"
 import { Tracker } from "../src/core/Tracker.ts"
+import { Channel } from "../src/ports/Channel.ts"
+import { Runtime } from "../src/ports/Runtime.ts"
 import { Store } from "../src/ports/Store.ts"
 import { WorkerApi } from "../src/ports/WorkerApi.ts"
 import { FakeChannelControl, FakeChannelLayer, type ChannelCall } from "./fakes/FakeChannel.ts"
@@ -329,6 +332,164 @@ describe("core flow", () => {
         .report({ workerId: "w-nope" as WorkerId, text: "x" })
         .pipe(Effect.flip)
       expect(unknown.reason).toBe("unknown_worker")
+    }).pipe(Effect.provide(harness)),
+  )
+
+  it.effect("stops a stopping worker however its run ended (review finding 7)", () =>
+    Effect.gen(function* () {
+      const runtime = yield* FakeRuntimeControl
+      const { workerId, runtimeRef, runId } = yield* startWorker
+      yield* take(slack("stop"))
+      // The run completed on its own before the stop reached it.
+      yield* runtime.finishRun(runtimeRef, runId, { outcome: "completed" })
+      yield* (yield* Tracker).poll(workerId)
+      expect(Option.getOrThrow(yield* (yield* Store).workers.get(workerId)).state).toBe("retired")
+      expect((yield* channelCalls("finishPlan")).map((f) => f.outcome)).toEqual(["stopped"])
+    }).pipe(Effect.provide(harness)),
+  )
+
+  it.effect("keeps a stop and the tracker from overwriting each other (review finding 2)", () =>
+    Effect.gen(function* () {
+      const runtime = yield* FakeRuntimeControl
+      const { workerId, runtimeRef, runId } = yield* startWorker
+      yield* runtime.finishRun(runtimeRef, runId, { outcome: "completed" })
+      const stop = yield* (yield* Dispatch)
+        .deliver(EventId.make("none"))
+        .pipe(Effect.andThen(take(slack("stop"))), Effect.forkChild)
+      yield* (yield* Tracker).poll(workerId)
+      yield* Fiber.join(stop)
+      yield* (yield* Tracker).poll(workerId)
+      const state = Option.getOrThrow(yield* (yield* Store).workers.get(workerId)).state
+      expect(["idle", "retired"]).toContain(state)
+      const finished = (yield* (yield* FakeRouterControl).submissions).filter((s) =>
+        s.requestId.startsWith("finished:"),
+      )
+      expect(finished).toHaveLength(1)
+    }).pipe(Effect.provide(harness)),
+  )
+
+  it.effect("records a finished run, its plan edit and its event together (review finding 1)", () =>
+    Effect.gen(function* () {
+      const runtime = yield* FakeRuntimeControl
+      const { workerId, runtimeRef, runId } = yield* startWorker
+      yield* runtime.putSteps(runtimeRef, [
+        { id: "s1", position: 1, runId, kind: "command", title: "test", status: "complete", detail: null },
+      ])
+      yield* runtime.finishRun(runtimeRef, runId, { finalMessage: "done" })
+      yield* (yield* Tracker).poll(workerId)
+      const store = yield* Store
+      const event = yield* store.events.get(EventId.make(`finished:${workerId}:${runId}`))
+      expect(Option.isSome(event)).toBe(true)
+      expect(Option.getOrThrow(yield* store.workers.get(workerId)).state).toBe("idle")
+      expect(yield* store.outbox.pending()).toEqual([])
+    }).pipe(Effect.provide(harness)),
+  )
+
+  it.effect("does not relaunch a worker whose launch failed (review finding 5)", () =>
+    Effect.gen(function* () {
+      yield* (yield* FakeRuntimeControl).failNextLaunch("T3 is down")
+      yield* take(slack("Fix it"))
+      yield* (yield* FakeRouterControl).callTool(
+        "start_worker",
+        { repo: "sandbox-repo", title: "t", brief: "b", thread: key },
+        "call-fail",
+      )
+      yield* recover
+      const launches = (yield* (yield* FakeRuntimeControl).calls).filter((c) => c._tag === "launch")
+      expect(launches).toHaveLength(1)
+      expect(Option.getOrThrow(yield* (yield* Store).workers.get("w-call-fail" as WorkerId)).state).toBe(
+        "failed",
+      )
+    }).pipe(Effect.provide(harness)),
+  )
+
+  it.effect(
+    "applies a send that a crash cut off before its result was recorded (review findings 3 and 6)",
+    () =>
+      Effect.gen(function* () {
+        const store = yield* Store
+        const runtime = yield* Runtime
+        const { workerId, runtimeRef, runId } = yield* startWorker
+        yield* (yield* FakeRuntimeControl).finishRun(runtimeRef, runId, {})
+        yield* (yield* Tracker).poll(workerId)
+        // The send reached the runtime, then atta died before recording it.
+        const op = OperationId.make("send:lost")
+        yield* (yield* Outbox).enqueue(op, "worker_send", {
+          workerId,
+          worker: runtimeRef,
+          text: "go on",
+          mode: "queue",
+        })
+        const sent = yield* runtime.send({
+          worker: runtimeRef,
+          text: "go on",
+          mode: "queue",
+          operationId: op,
+        })
+        yield* recover
+        const worker = Option.getOrThrow(yield* store.workers.get(workerId))
+        expect(worker.state).toBe("running")
+        expect(worker.runId).toBe(sent.runId)
+        expect((yield* (yield* FakeRuntimeControl).calls).filter((c) => c._tag === "send")).toHaveLength(1)
+      }).pipe(Effect.provide(harness)),
+  )
+
+  it.effect("does not post a second plan message after a crash (review finding 8)", () =>
+    Effect.gen(function* () {
+      const store = yield* Store
+      const channel = yield* Channel
+      const op = OperationId.make("plan:crashed")
+      // Slack got the plan message, then atta died before marking the entry done.
+      yield* store.outbox.enqueue({
+        operationId: op,
+        kind: "plan_upsert",
+        payload: { thread, title: "t" },
+        at: Timestamp.make(0),
+      })
+      const posted = yield* channel.upsertPlan({ thread, plan: null, title: "t", tasks: [], operationId: op })
+      const before = (yield* channelCalls("upsertPlan")).length
+      const result = yield* (yield* Outbox).run(op)
+      expect(result).toEqual(posted)
+      expect((yield* channelCalls("upsertPlan")).length).toBe(before)
+    }).pipe(Effect.provide(harness)),
+  )
+
+  it.effect("opens a scheduled prompt's new thread before the router sees it (review finding 11)", () =>
+    Effect.gen(function* () {
+      const target = config.schedules[0]!.target
+      const prompt: Event = {
+        _tag: "ScheduledPrompt",
+        id: EventId.make("sched-1"),
+        source: "clock",
+        externalId: "morning@2026-11-03T08:00:00Z",
+        receivedAt: Timestamp.make(1),
+        schedule: "morning",
+        slot: Timestamp.make(1),
+        target,
+        text: "Summarise",
+      }
+      yield* take(prompt)
+      const content = (yield* (yield* FakeRouterControl).submissions).at(-1)!.content
+      const opened = content.match(/answer in thread (slack:\S+?):/)?.[1]
+      expect(opened).toBeDefined()
+      const started = yield* (yield* FakeRouterControl).callTool(
+        "start_worker",
+        { repo: "sandbox-repo", title: "Summary", brief: "Summarise yesterday", thread: opened! },
+        "call-sched",
+      )
+      expect(started).toContain("Started worker")
+    }).pipe(Effect.provide(harness)),
+  )
+
+  it.effect("refuses to subscribe a retired worker (review finding 13)", () =>
+    Effect.gen(function* () {
+      const { workerId } = yield* startWorker
+      yield* take(slack("stop"))
+      yield* (yield* Tracker).poll(workerId)
+      const error = yield* (yield* FakeRouterControl)
+        .callTool("subscribe", { thread: key, worker: workerId })
+        .pipe(Effect.flip)
+      expect(error.message).toContain("retired")
     }).pipe(Effect.provide(harness)),
   )
 

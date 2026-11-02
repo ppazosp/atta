@@ -39,7 +39,7 @@ const newRun = (worker: RuntimeRef, n: number): RunStatus => ({
 
 /**
  * Lets a test play the runtime. It behaves like T3 where core depends on it:
- * - a repeated launch with the same operation ID returns the same worker
+ * - a repeated launch or send with the same operation ID returns the first result without acting again
  * - launch does not report the branch; `status` does
  * - `steps` stops before the first unfinished step, so it is read again until it finishes
  * - `status` answers for the run asked about; `startContinuation` adds a run of the runtime's own, as T3 does
@@ -63,6 +63,7 @@ export const FakeRuntimeLayer = Layer.effectContext(
     const launches = yield* Ref.make<ReadonlyMap<string, RuntimeRef>>(new Map())
     const calls = yield* Ref.make<ReadonlyArray<RuntimeCall>>([])
     const launchFailure = yield* Ref.make<string | null>(null)
+    const sends = yield* Ref.make<ReadonlyMap<string, RunId>>(new Map())
     const record = (call: RuntimeCall) => Ref.update(calls, (all) => [...all, call])
     const get = (worker: RuntimeRef, operation: string) =>
       Ref.get(workers).pipe(
@@ -95,13 +96,17 @@ export const FakeRuntimeLayer = Layer.effectContext(
           yield* put(worker, { runs: [newRun(worker, 1)], steps: [] })
           return { runtimeRef: worker, runId: runIdOf(worker, 1), branch: null, worktreePath: null }
         }),
-      send: ({ worker, text, mode }) =>
+      send: ({ worker, text, mode, operationId }) =>
         Effect.gen(function* () {
+          const repeated = (yield* Ref.get(sends)).get(operationId)
+          if (repeated !== undefined) return { runId: repeated }
           yield* record({ _tag: "send", worker, text, mode })
           const script = yield* get(worker, "send")
           const current = script.runs.at(-1)
-          if (mode === "steer" && current?.state === "running") return { runId: current.runId }
-          return { runId: yield* addRun(worker, script) }
+          const runId =
+            mode === "steer" && current?.state === "running" ? current.runId : yield* addRun(worker, script)
+          yield* Ref.update(sends, (all) => new Map(all).set(operationId, runId))
+          return { runId }
         }),
       stop: ({ worker }) =>
         Effect.gen(function* () {

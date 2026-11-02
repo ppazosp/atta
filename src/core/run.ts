@@ -30,7 +30,7 @@ export const CoreBaseLayer = RouterToolsLive.pipe(
 /** Needs `CoreBaseLayer`'s services and the RouterEngine; provides Dispatch, Tracker and WorkerApi (for WP7). */
 export const CoreLayer = Layer.mergeAll(Tracker.layer, WorkerApiLive).pipe(Layer.provideMerge(Dispatch.layer))
 
-/** Finishes what a crash cut short: outbox actions, launches, undispatched events and deliveries. */
+/** Finishes what a crash cut short: outbox actions (with their results), undispatched events and deliveries. */
 export const recover = Effect.gen(function* () {
   const store = yield* Store
   const outbox = yield* Outbox
@@ -38,28 +38,25 @@ export const recover = Effect.gen(function* () {
   const intake = yield* Intake
   const dispatch = yield* Dispatch
 
-  yield* outbox.recover
-  for (const worker of yield* store.workers.inStates(["launching"])) {
-    const after = yield* workers.launch(worker.id).pipe(Effect.catch(() => Effect.succeed(null)))
-    if (after?.state === "failed") {
-      const at = yield* now
-      const id = EventId.make(`finished:${worker.id}:launch`)
-      const routed = yield* intake.accept({
-        _tag: "WorkerFinished",
-        id,
-        source: "worker",
-        externalId: `${worker.id}:launch`,
-        receivedAt: at,
-        workerId: worker.id,
-        runId: RunId.make(`${worker.id}:launch`),
-        outcome: "failed",
-        finalMessage: "The worker could not start after atta restarted.",
-        branch: null,
-        commit: null,
-        wrongBranch: false,
-      })
-      if (routed !== null) yield* dispatch.deliver(id)
-    }
+  yield* outbox.recover(workers.recoveryHandlers)
+  // A launch that failed while atta was down, or during recovery, still has to reach the router once.
+  for (const worker of yield* store.workers.inStates(["failed"])) {
+    if (worker.runtimeRef !== null) continue
+    const id = EventId.make(`finished:${worker.id}:launch`)
+    yield* intake.accept({
+      _tag: "WorkerFinished",
+      id,
+      source: "worker",
+      externalId: `${worker.id}:launch`,
+      receivedAt: yield* now,
+      workerId: worker.id,
+      runId: RunId.make(`${worker.id}:launch`),
+      outcome: "failed",
+      finalMessage: "The worker could not start.",
+      branch: null,
+      commit: null,
+      wrongBranch: false,
+    })
   }
   for (const event of yield* store.events.undispatched()) yield* intake.redispatch(event)
   yield* dispatch.recover

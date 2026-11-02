@@ -183,6 +183,9 @@ export const RouterToolsLive = Layer.effect(
         Effect.gen(function* () {
           yield* knownThread("subscribe", thread)
           const w = yield* workers.get(WorkerId.make(worker))
+          if (w.state === "retired" || w.state === "stopping") {
+            return yield* new ToolError({ tool: "subscribe", message: `worker ${w.id} is ${w.state}` })
+          }
           yield* store.subscriptions.subscribe(thread, w.id, w.updatedAt)
           return `Worker ${w.id} now follows ${thread}.`
         }).pipe(Effect.mapError(fail("subscribe"))),

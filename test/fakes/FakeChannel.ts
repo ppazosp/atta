@@ -18,6 +18,7 @@ export type ChannelCall =
   | { readonly _tag: "unreact"; readonly message: MessageRef; readonly emoji: string }
   | {
       readonly _tag: "upsertPlan"
+      readonly operationId: string
       readonly plan: MessageRef
       readonly title: string
       readonly tasks: ReadonlyArray<PlanTask>
@@ -59,20 +60,23 @@ export const FakeChannelLayer = Layer.effectContext(
           yield* record({ _tag: "reply", target, text, operationId, message })
           return message
         }),
+      // Like Slack, both replies and plan messages carry their operation ID.
       findReply: ({ operationId }) =>
         Ref.get(calls).pipe(
-          Effect.map((all) =>
-            Option.fromNullishOr(all.find((c) => c._tag === "reply" && c.operationId === operationId)).pipe(
-              Option.map((c) => (c as Extract<ChannelCall, { _tag: "reply" }>).message),
-            ),
-          ),
+          Effect.map((all) => {
+            for (const c of all) {
+              if (c._tag === "reply" && c.operationId === operationId) return Option.some(c.message)
+              if (c._tag === "upsertPlan" && c.operationId === operationId) return Option.some(c.plan)
+            }
+            return Option.none()
+          }),
         ),
       react: (message, emoji) => record({ _tag: "react", message, emoji }),
       unreact: (message, emoji) => record({ _tag: "unreact", message, emoji }),
-      upsertPlan: ({ thread, plan, title, tasks }) =>
+      upsertPlan: ({ thread, plan, title, tasks, operationId }) =>
         Effect.gen(function* () {
           const message = plan ?? nextMessage(thread.team, thread.conversation)
-          yield* record({ _tag: "upsertPlan", plan: message, title, tasks })
+          yield* record({ _tag: "upsertPlan", operationId, plan: message, title, tasks })
           return message
         }),
       finishPlan: ({ plan, outcome, answer }) => record({ _tag: "finishPlan", plan, outcome, answer }),

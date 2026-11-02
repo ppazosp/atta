@@ -1,11 +1,12 @@
-import { Context, Effect, Layer, Option } from "effect"
+import { Context, Effect, Layer, Option, Schema } from "effect"
 import type { Event } from "./domain/event.ts"
 import { OperationId, WorkerId, type EventId } from "./domain/ids.ts"
 import { isStopCommand } from "./domain/routing.ts"
+import { threadKey, type ThreadKey } from "./domain/thread.ts"
 import { RouterEngine } from "../ports/RouterEngine.ts"
 import { Store, type DeliveryTarget } from "../ports/Store.ts"
 import { reactionOp } from "./Intake.ts"
-import { Outbox } from "./Outbox.ts"
+import { Outbox, Results } from "./Outbox.ts"
 import { renderEvent } from "./render.ts"
 import { Workers } from "./Workers.ts"
 
@@ -56,7 +57,27 @@ export class Dispatch extends Context.Service<
           event._tag === "WorkerReport" || event._tag === "WorkerFinished"
             ? Option.getOrNull(yield* store.workers.get(event.workerId))
             : null
-        yield* engine.submit({ requestId: event.id, content: renderEvent(event, worker), whenBusy: "queue" })
+        // A scheduled prompt for a new thread opens the thread first, so the router can reply and start workers there.
+        let opened: ThreadKey | null = null
+        if (event._tag === "ScheduledPrompt" && "conversation" in event.target) {
+          const op = OperationId.make(`schedule-root:${event.id}`)
+          yield* store.transaction(
+            outbox.enqueue(op, "slack_reply", {
+              target: { conversation: event.target.conversation },
+              text: `Scheduled: ${event.schedule}`,
+            }),
+          )
+          const root = yield* outbox
+            .run(op)
+            .pipe(Effect.flatMap(Schema.decodeUnknownEffect(Results.slack_reply)))
+          opened = threadKey({ team: root.team, conversation: root.conversation, rootTs: root.ts })
+          yield* store.threads.touch(opened, event.receivedAt)
+        }
+        yield* engine.submit({
+          requestId: event.id,
+          content: renderEvent(event, worker, opened),
+          whenBusy: "queue",
+        })
         yield* engine.settled(event.id).pipe(
           Effect.flatMap((settled) => markHandled(event, settled.status === "answered" ? "done" : "failed")),
           Effect.catch((error) => Effect.logWarning(`could not finish event ${event.id}`, error)),
