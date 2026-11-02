@@ -39,6 +39,15 @@ const Payloads = {
     mode: Schema.Literals(["steer", "queue"]),
   }),
   worker_stop: Schema.Struct({ workerId: WorkerId, worker: RuntimeRef }),
+  approval_request: Schema.Struct({
+    ownerUserId: Schema.String,
+    proposalId: Schema.String,
+    thread: ThreadRef,
+    repo: Schema.String,
+    title: Schema.String,
+    why: Schema.String,
+  }),
+  approval_close: Schema.Struct({ message: MessageRef, text: Schema.String }),
 } satisfies Record<OutboxKind, Schema.Top>
 
 export type Payload<K extends OutboxKind> = (typeof Payloads)[K]["Type"]
@@ -57,6 +66,7 @@ export const Results = {
     worktreePath: Schema.NullOr(Schema.String),
   }),
   worker_send: Schema.Struct({ runId: RunId }),
+  approval_request: MessageRef,
 }
 
 const decode = <S extends Schema.Top>(schema: S, value: unknown, operation: string) =>
@@ -153,6 +163,14 @@ export class Outbox extends Context.Service<
           case "worker_send": {
             const p = yield* decode(Payloads.worker_send, entry.payload, "outbox.worker_send")
             return yield* runtime.send({ worker: p.worker, text: p.text, mode: p.mode, operationId: id })
+          }
+          case "approval_request": {
+            const p = yield* decode(Payloads.approval_request, entry.payload, "outbox.approval_request")
+            return yield* channel.requestApproval({ ...p, operationId: id })
+          }
+          case "approval_close": {
+            const p = yield* decode(Payloads.approval_close, entry.payload, "outbox.approval_close")
+            return yield* channel.closeApproval(p).pipe(Effect.as(null))
           }
           case "worker_stop": {
             const p = yield* decode(Payloads.worker_stop, entry.payload, "outbox.worker_stop")

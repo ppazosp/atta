@@ -7,13 +7,17 @@ import { RouterEngine } from "../ports/RouterEngine.ts"
 import { Store, type DeliveryTarget } from "../ports/Store.ts"
 import { reactionOp } from "./Intake.ts"
 import { Outbox, Results } from "./Outbox.ts"
-import { renderEvent } from "./render.ts"
+import { now } from "./clock.ts"
+import { renderEvent, renderObservation } from "./render.ts"
 import { Workers } from "./Workers.ts"
 
 /**
  * Delivers routed events: to the router as an input, or straight to a worker. When the event is a Slack message,
  * 👀 becomes ✅ once it is handled: when the router has answered it, or when the worker has taken it.
  */
+/** The outbox operation that sends the approval request for a proposal. */
+export const approvalOp = (proposalId: EventId) => OperationId.make(`approval:${proposalId}`)
+
 export class Dispatch extends Context.Service<
   Dispatch,
   {
@@ -85,6 +89,53 @@ export class Dispatch extends Context.Service<
         )
       })
 
+      /** A watched-channel message: the router judges it. Nothing is posted and nothing reacts in the channel. */
+      const observe = Effect.fn("Dispatch.observe")(function* (event: Event) {
+        if (event._tag !== "UserMessage") return
+        yield* engine.submit({ requestId: event.id, content: renderObservation(event), whenBusy: "queue" })
+      })
+
+      /**
+       * The user's Start or Skip on a proposal. Start opens the channel thread and starts the worker there; either
+       * way the approval message loses its buttons. The worker ID comes from the proposal, so a replay starts no
+       * second worker.
+       */
+      const decide = Effect.fn("Dispatch.decide")(function* (event: Event) {
+        if (event._tag !== "ApprovalDecision") return
+        const found = yield* store.events.get(event.proposalId)
+        if (Option.isNone(found) || found.value._tag !== "WorkProposed") {
+          return yield* Effect.logWarning(`decision ${event.id} names no proposal`)
+        }
+        const proposal = found.value
+        let text = `Skipped: ${proposal.title}`
+        if (event.decision === "approve") {
+          const origin = threadKey(proposal.thread)
+          yield* store.threads.touch(origin, yield* now)
+          const seed = proposal.id.replace(/[^A-Za-z0-9_-]/g, "-")
+          yield* workers
+            .start({
+              brief: { repo: proposal.repo, title: proposal.title, text: proposal.brief },
+              origin,
+              seed,
+            })
+            .pipe(
+              Effect.catch((error) => Effect.logWarning(`starting proposal ${proposal.id} failed`, error)),
+            )
+          // A launch that has not landed yet is retried by the tracker, so only a recorded failure counts.
+          const worker = yield* store.workers.get(WorkerId.make(`w-${seed}`))
+          text =
+            Option.isSome(worker) && worker.value.state !== "failed"
+              ? `Started: ${proposal.title}`
+              : `Could not start: ${proposal.title}`
+        }
+        const request = yield* outbox
+          .run(approvalOp(proposal.id))
+          .pipe(Effect.flatMap(Schema.decodeUnknownEffect(Results.approval_request)))
+        const close = OperationId.make(`approval-close:${proposal.id}`)
+        yield* store.transaction(outbox.enqueue(close, "approval_close", { message: request, text }))
+        yield* outbox.run(close)
+      })
+
       const toWorker = Effect.fn("Dispatch.toWorker")(function* (event: Event, workerId: WorkerId) {
         if (event._tag !== "UserMessage") return yield* toRouter(event)
         const handled = isStopCommand(event.text)
@@ -102,9 +153,10 @@ export class Dispatch extends Context.Service<
       })
 
       const deliverOne = Effect.fn("Dispatch.deliverOne")(function* (event: Event, target: DeliveryTarget) {
-        yield* target === "router"
-          ? toRouter(event)
-          : toWorker(event, WorkerId.make(target.slice("worker:".length)))
+        if (target === "router") yield* toRouter(event)
+        else if (target === "observe") yield* observe(event)
+        else if (target === "core") yield* decide(event)
+        else yield* toWorker(event, WorkerId.make(target.slice("worker:".length)))
         yield* store.deliveries.markDone(event.id, target)
       })
 
@@ -112,13 +164,14 @@ export class Dispatch extends Context.Service<
         function* (eventId: EventId) {
           const found = yield* store.events.get(eventId)
           if (Option.isNone(found)) return
-          // 👀 first, before the router or a worker spends any time on it. Intake queued it with the event.
-          if (found.value._tag === "UserMessage") {
+          const pending = (yield* store.deliveries.pending()).filter((d) => d.eventId === eventId)
+          // 👀 first, before the router or a worker spends any time on it. Intake queued it with the event, except
+          // for an observation: atta never reacts in a watched channel.
+          if (found.value._tag === "UserMessage" && pending.some((d) => d.target !== "observe")) {
             yield* outbox
               .run(reactionOp(eventId, "seen"))
               .pipe(Effect.catch((error) => Effect.logWarning(`could not react to ${eventId}`, error)))
           }
-          const pending = (yield* store.deliveries.pending()).filter((d) => d.eventId === eventId)
           for (const delivery of pending) {
             yield* deliverOne(found.value, delivery.target).pipe(
               Effect.catch((error) =>

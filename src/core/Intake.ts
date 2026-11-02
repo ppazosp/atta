@@ -30,25 +30,38 @@ export class Intake extends Context.Service<
       const store = yield* Store
       const outbox = yield* Outbox
       const settings = yield* Settings
+      const watchedChannels = new Set(settings.watchedChannels ?? [])
 
       const dispatch = Effect.fn("Intake.dispatch")(function* (event: Event) {
         const at = yield* now
         const key = event._tag === "UserMessage" ? threadKey(event.thread) : null
         const subscribers = key === null ? [] : yield* store.subscriptions.subscribers(key)
         const threadKnown = key === null ? true : yield* store.threads.exists(key)
+        const watched = event._tag === "UserMessage" && watchedChannels.has(event.thread.conversation)
         const decided = route(event, {
           trustedUserId: settings.slack.trustedUserId,
           subscribers,
           threadKnown,
+          watched,
         })
-        // DMs and mentions open a thread atta may post in; a schedule's thread was recorded at intake.
-        if (key !== null && decided._tag !== "Drop") yield* store.threads.touch(key, at)
+        // DMs and mentions open a thread atta may post in; a schedule's thread was recorded at intake. Watched
+        // channel threads stay closed until the trusted user approves work there.
+        const opensThread = decided._tag !== "Drop" && decided._tag !== "Observe"
+        if (key !== null && opensThread) yield* store.threads.touch(key, at)
         switch (decided._tag) {
           case "Drop":
             yield* Effect.logInfo(`dropped event ${event.id}: ${decided.reason}`)
             break
+          case "Record":
+            break
           case "ToRouter":
             yield* store.deliveries.record(event.id, "router", at)
+            break
+          case "Observe":
+            yield* store.deliveries.record(event.id, "observe", at)
+            break
+          case "Decide":
+            yield* store.deliveries.record(event.id, "core", at)
             break
           case "ToWorker":
             yield* store.deliveries.record(event.id, `worker:${decided.workerId}`, at)
@@ -57,7 +70,8 @@ export class Intake extends Context.Service<
             for (const id of decided.workerIds) yield* store.deliveries.record(event.id, `worker:${id}`, at)
             break
         }
-        if (event._tag === "UserMessage" && decided._tag !== "Drop") {
+        // 👀 only where the user talks to atta; a watched channel never sees atta react.
+        if (event._tag === "UserMessage" && opensThread) {
           yield* outbox.enqueue(reactionOp(event.id, "seen"), "slack_react", {
             message: event.message,
             emoji: "eyes",

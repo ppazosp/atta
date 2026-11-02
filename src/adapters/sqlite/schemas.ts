@@ -26,7 +26,10 @@ export const SubscriberRow = Schema.Struct({ workerId: WorkerId, state: WorkerSt
 
 export const DeliveryRow = Schema.Struct({
   eventId: EventId,
-  target: Schema.Union([Schema.Literal("router"), Schema.TemplateLiteral(["worker:", Schema.String])]),
+  target: Schema.Union([
+    Schema.Literals(["router", "observe", "core"]),
+    Schema.TemplateLiteral(["worker:", Schema.String]),
+  ]),
   status: Schema.Literals(["pending", "done"]),
   attempts: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
   createdAt: Timestamp,

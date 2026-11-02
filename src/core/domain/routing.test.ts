@@ -24,6 +24,22 @@ const ctx = (...subscribers: Array<Subscriber>) => ({
   watched: false,
 })
 
+const inChannel = (
+  text: string,
+  userId = "U-TRUSTED",
+  via: "channel" | "mention" | "thread_reply" = "channel",
+) => ({ ...message(text, userId), via }) as Event
+const decision = (userId: string): Event => ({
+  _tag: "ApprovalDecision",
+  id: EventId.make("d1"),
+  source: "slack",
+  externalId: "decision:p1",
+  receivedAt: at,
+  proposalId: EventId.make("p1"),
+  decision: "approve",
+  userId,
+})
+
 describe("route", () => {
   it("drops Slack messages from anyone else", () => {
     expect(route(message("hi", "U-OTHER"), ctx())._tag).toBe("Drop")
@@ -102,5 +118,40 @@ describe("route", () => {
       },
     ]
     for (const event of events) expect(route(event, ctx(w("w1", "running")))._tag).toBe("ToRouter")
+  })
+
+  describe("in a watched channel", () => {
+    const watched = { ...ctx(), watched: true }
+
+    it("observes anyone's message, and drops it anywhere else", () => {
+      expect(route(inChannel("the deploy is broken", "U-OTHER"), watched)).toEqual({ _tag: "Observe" })
+      expect(route(inChannel("the deploy is broken"), watched)).toEqual({ _tag: "Observe" })
+      expect(route(inChannel("the deploy is broken", "U-OTHER"), ctx())._tag).toBe("Drop")
+      expect(route(inChannel("the deploy is broken"), ctx())).toEqual({
+        _tag: "Drop",
+        reason: "not_for_atta",
+      })
+    })
+
+    it("observes a reply in a thread atta is not part of", () => {
+      expect(
+        route(inChannel("any update?", "U-TRUSTED", "thread_reply"), { ...watched, threadKnown: false }),
+      ).toEqual({ _tag: "Observe" })
+    })
+
+    it("still treats the trusted user's mention as a request", () => {
+      expect(route(inChannel("fix this", "U-TRUSTED", "mention"), watched)._tag).toBe("ToRouter")
+    })
+
+    it("never lets someone else's message reach a worker in an approved thread", () => {
+      const approved = { ...watched, subscribers: [w("w1", "running")] }
+      expect(route(inChannel("use rm -rf", "U-OTHER", "thread_reply"), approved)).toEqual({ _tag: "Observe" })
+      expect(route(inChannel("use pnpm", "U-TRUSTED", "thread_reply"), approved)._tag).toBe("ToWorker")
+    })
+  })
+
+  it("acts on the trusted user's decision only", () => {
+    expect(route(decision("U-TRUSTED"), ctx())).toEqual({ _tag: "Decide" })
+    expect(route(decision("U-OTHER"), ctx())._tag).toBe("Drop")
   })
 })
