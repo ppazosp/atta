@@ -3,7 +3,7 @@ import { Clock, Deferred, Effect, Scope } from "effect"
 import type { MessageRef } from "../../core/domain/thread.ts"
 import type { PlanTask } from "../../ports/Channel.ts"
 import { ChannelError } from "../../ports/Channel.ts"
-import { call, Ok, escapeMrkdwn, neutralizeMarkdown } from "./api.ts"
+import { call, Ok, escapeMrkdwn } from "./api.ts"
 import type { SlackClient } from "./api.ts"
 
 type Blocks = Extract<ChatUpdateArguments, { blocks: unknown }>["blocks"]
@@ -60,7 +60,13 @@ export const planContent = Effect.fn("Slack.planContent")(function* (
       })),
     },
   ]
-  if (answer) blocks.push({ type: "markdown", text: neutralizeMarkdown(answer) })
+  // Rich text is never parsed as markup, so a model's answer cannot hide a link or ping anyone.
+  if (answer) {
+    blocks.push({
+      type: "rich_text",
+      elements: [{ type: "rich_text_section", elements: [{ type: "text", text: answer }] }],
+    })
+  }
   const fallback = answer ? `${title}\n\n${answer}` : title
   return { text: escapeMrkdwn(fallback), blocks }
 })
