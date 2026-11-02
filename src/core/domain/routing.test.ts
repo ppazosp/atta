@@ -17,11 +17,21 @@ const message = (text: string, userId = "U-TRUSTED"): Event => ({
   via: "dm",
 })
 const w = (id: string, state: Subscriber["state"]): Subscriber => ({ workerId: WorkerId.make(id), state })
-const ctx = (...subscribers: Array<Subscriber>) => ({ trustedUserId: "U-TRUSTED", subscribers })
+const ctx = (...subscribers: Array<Subscriber>) => ({
+  trustedUserId: "U-TRUSTED",
+  subscribers,
+  threadKnown: true,
+})
 
 describe("route", () => {
   it("drops Slack messages from anyone else", () => {
     expect(route(message("hi", "U-OTHER"), ctx())._tag).toBe("Drop")
+  })
+
+  it("drops a thread reply in a thread atta is not part of", () => {
+    const reply = { ...message("unrelated chat"), via: "thread_reply" as const }
+    expect(route(reply, { ...ctx(), threadKnown: false })).toEqual({ _tag: "Drop", reason: "unknown_thread" })
+    expect(route(reply, ctx())._tag).toBe("ToRouter")
   })
 
   it("sends a message with no worker to the router", () => {

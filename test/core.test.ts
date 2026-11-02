@@ -37,7 +37,11 @@ const harness = CoreLayer.pipe(Layer.provideMerge(engine))
 const thread = { team: "T01", conversation: "D01", rootTs: "1700000000.000100" }
 const key = threadKey(thread)
 let seq = 0
-const slack = (text: string, userId = ME): Extract<Event, { _tag: "UserMessage" }> => {
+const slack = (
+  text: string,
+  userId = ME,
+  via: "dm" | "mention" | "thread_reply" = "dm",
+): Extract<Event, { _tag: "UserMessage" }> => {
   seq++
   return {
     _tag: "UserMessage",
@@ -49,7 +53,7 @@ const slack = (text: string, userId = ME): Extract<Event, { _tag: "UserMessage" 
     message: { ...thread, ts: `1700000000.0${String(seq).padStart(5, "0")}` },
     userId,
     text,
-    via: seq === 1 ? "dm" : "thread_reply",
+    via,
   }
 }
 
@@ -93,6 +97,16 @@ describe("core flow", () => {
       expect(yield* take({ ...event, id: EventId.make("retry") })).toBeNull()
       expect((yield* (yield* FakeRouterControl).submissions).map((s) => s.requestId)).toEqual([event.id])
       expect((yield* channelCalls("react")).map((r) => r.emoji)).toEqual(["eyes"])
+    }).pipe(Effect.provide(harness)),
+  )
+
+  it.effect("ignores replies in threads atta is not part of", () =>
+    Effect.gen(function* () {
+      expect(yield* take(slack("chatting with a colleague", ME, "thread_reply"))).toEqual({
+        _tag: "Drop",
+        reason: "unknown_thread",
+      })
+      expect(yield* (yield* FakeRouterControl).submissions).toEqual([])
     }).pipe(Effect.provide(harness)),
   )
 
@@ -176,7 +190,7 @@ describe("core flow", () => {
       const router = yield* FakeRouterControl
       yield* startWorker
       const before = (yield* router.submissions).length
-      const routed = yield* take(slack("Use pnpm, not npm"))
+      const routed = yield* take(slack("Use pnpm, not npm", ME, "thread_reply"))
       expect(routed).toMatchObject({ _tag: "ToWorker", mode: "steer" })
       expect((yield* router.submissions).length).toBe(before)
       const sends = (yield* (yield* FakeRuntimeControl).calls).filter((c) => c._tag === "send")
