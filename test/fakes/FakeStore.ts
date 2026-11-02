@@ -29,26 +29,32 @@ const empty: State = {
   outbox: new Map(),
 }
 
-/** The working copy of the transaction the current fiber is in. */
-class CurrentTx extends Context.Service<CurrentTx, Ref.Ref<State>>()("atta/test/FakeStore/CurrentTx") {}
+let instances = 0
 
 /**
- * An in-memory Store that behaves like SQLite where it matters to core: a transaction works on its own copy,
- * nobody else sees its writes until it commits, a failure discards them, and transactions and lone writes run
- * one at a time. A transaction inside a transaction joins the outer one.
+ * An in-memory Store that behaves like SQLite where it matters to core:
+ * - a transaction works on its own copy; nobody else sees its writes until it commits, and a failure discards them
+ * - transactions and lone writes run one at a time, and every check-then-write is atomic
+ * - a transaction inside a transaction is a savepoint: if it fails, only its own writes are undone
  */
 export const makeFakeStore = Effect.gen(function* () {
+  // One transaction context per store, so two stores in one test never share a transaction.
+  class CurrentTx extends Context.Service<CurrentTx, Ref.Ref<State>>()(
+    `atta/test/FakeStore/CurrentTx/${++instances}`,
+  ) {}
   const state = yield* Ref.make(empty)
   const lock = yield* Semaphore.make(1)
-  const update = (f: (s: State) => State) =>
+  /** Reads and writes atomically: inside the current transaction, or alone under the lock. */
+  const modify = <A>(f: (s: State) => readonly [A, State]) =>
     Effect.serviceOption(CurrentTx).pipe(
       Effect.flatMap(
         Option.match({
-          onNone: () => lock.withPermits(1)(Ref.update(state, f)),
-          onSome: (tx) => Ref.update(tx, f),
+          onNone: () => lock.withPermits(1)(Ref.modify(state, f)),
+          onSome: (tx) => Ref.modify(tx, f),
         }),
       ),
     )
+  const update = (f: (s: State) => State) => modify((s) => [undefined, f(s)] as const)
   const read = <A>(f: (s: State) => A) =>
     Effect.serviceOption(CurrentTx).pipe(
       Effect.flatMap(Option.match({ onNone: () => Ref.get(state), onSome: (tx) => Ref.get(tx) })),
@@ -60,7 +66,10 @@ export const makeFakeStore = Effect.gen(function* () {
       Effect.serviceOption(CurrentTx).pipe(
         Effect.flatMap((outer) =>
           Option.isSome(outer)
-            ? effect
+            ? Effect.gen(function* () {
+                const savepoint = yield* Ref.get(outer.value)
+                return yield* effect.pipe(Effect.onError(() => Ref.set(outer.value, savepoint)))
+              })
             : lock.withPermits(1)(
                 Effect.gen(function* () {
                   const tx = yield* Ref.make(yield* Ref.get(state))
@@ -73,13 +82,16 @@ export const makeFakeStore = Effect.gen(function* () {
       ),
     events: {
       insert: (event) =>
-        Effect.gen(function* () {
-          const existing = (yield* read((s) => s.events)).find(
+        modify((s): readonly [{ readonly inserted: boolean; readonly event: Event }, State] => {
+          const existing = s.events.find(
             (e) => e.source === event.source && e.externalId === event.externalId,
           )
-          if (existing) return { inserted: false, event: existing }
-          yield* update((s) => ({ ...s, events: [...s.events, event] }))
-          return { inserted: true, event }
+          return existing
+            ? [{ inserted: false, event: existing }, s]
+            : [
+                { inserted: true, event },
+                { ...s, events: [...s.events, event] },
+              ]
         }),
       get: (id) => read((s) => Option.fromNullishOr(s.events.find((e) => e.id === id))),
       markDispatched: (id) => update((s) => ({ ...s, dispatched: new Set(s.dispatched).add(id) })),

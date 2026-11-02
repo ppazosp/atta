@@ -8,7 +8,7 @@ import { Runtime } from "../src/ports/Runtime.ts"
 import { Store } from "../src/ports/Store.ts"
 import { FakeRouterControl, FakeRouterEngineLayer } from "./fakes/FakeRouterEngine.ts"
 import { FakeRuntimeControl, FakeRuntimeLayer } from "./fakes/FakeRuntime.ts"
-import { FakeStoreLayer } from "./fakes/FakeStore.ts"
+import { FakeStoreLayer, makeFakeStore } from "./fakes/FakeStore.ts"
 
 const at = Timestamp.make(1)
 const event = {
@@ -77,6 +77,64 @@ describe("FakeStore", () => {
       expect(Option.isSome(yield* store.outbox.get(op("outside")))).toBe(true)
       expect(Option.isNone(yield* store.outbox.get(op("in-tx")))).toBe(true)
     }).pipe(Effect.provide(FakeStoreLayer)),
+  )
+})
+
+describe("FakeStore edge cases", () => {
+  it.effect("undoes only a failed inner transaction's writes", () =>
+    Effect.gen(function* () {
+      const store = yield* Store
+      const enqueue = (id: string) =>
+        store.outbox.enqueue({ operationId: op(id), kind: "slack_reply", payload: {}, at })
+      yield* store.transaction(
+        enqueue("outer").pipe(
+          Effect.andThen(store.transaction(enqueue("inner").pipe(Effect.andThen(Effect.fail("boom"))))),
+          Effect.ignore,
+        ),
+      )
+      expect(Option.isSome(yield* store.outbox.get(op("outer")))).toBe(true)
+      expect(Option.isNone(yield* store.outbox.get(op("inner")))).toBe(true)
+    }).pipe(Effect.provide(FakeStoreLayer)),
+  )
+
+  it.effect("stores an event once when a lone insert races a transaction inserting it", () =>
+    Effect.gen(function* () {
+      const store = yield* Store
+      const inserted = yield* Deferred.make<void>()
+      const proceed = yield* Deferred.make<void>()
+      const tx = yield* store
+        .transaction(
+          store.events
+            .insert(event)
+            .pipe(
+              Effect.andThen(Deferred.succeed(inserted, undefined)),
+              Effect.andThen(Deferred.await(proceed)),
+            ),
+        )
+        .pipe(Effect.forkChild)
+      yield* Deferred.await(inserted)
+      const lone = yield* store.events.insert({ ...event, id: EventId.make("e2") }).pipe(Effect.forkChild)
+      yield* Deferred.succeed(proceed, undefined)
+      yield* Fiber.join(tx)
+      expect((yield* Fiber.join(lone)).inserted).toBe(false)
+      expect((yield* store.events.undispatched()).length).toBe(1)
+    }).pipe(Effect.provide(FakeStoreLayer)),
+  )
+
+  it.effect("keeps two stores' transactions apart", () =>
+    Effect.gen(function* () {
+      const a = (yield* makeFakeStore).store
+      const b = (yield* makeFakeStore).store
+      yield* a
+        .transaction(
+          b.outbox
+            .enqueue({ operationId: op("in-b"), kind: "slack_reply", payload: {}, at })
+            .pipe(Effect.andThen(Effect.fail("boom"))),
+        )
+        .pipe(Effect.ignore)
+      expect(Option.isSome(yield* b.outbox.get(op("in-b")))).toBe(true)
+      expect(Option.isNone(yield* a.outbox.get(op("in-b")))).toBe(true)
+    }),
   )
 })
 
