@@ -1,8 +1,8 @@
-# Atta v0 plan
+# atta v0 plan
 
-Atta is named after leafcutter ants, whose colonies split the work between castes.
+atta is named after leafcutter ants, whose colonies split the work between castes.
 
-Atta v0 lets you send work to agents from Slack and follow it there. You write to Atta in Slack. A lean router decides what to do. Throwaway workers do the work in T3 Code, and you see their progress in the Slack thread until they report back.
+atta v0 lets you send work to agents from Slack and follow it there. You write to atta in Slack. A lean router decides what to do. Throwaway workers do the work in T3 Code, and you see their progress in the Slack thread until they report back.
 
 This plan says what v0 includes, how it is built, in what order, and how we will know it works. Nothing here is built yet. Building starts when you say so.
 
@@ -14,7 +14,7 @@ This plan says what v0 includes, how it is built, in what order, and how we will
 
 When v0 is done, you can:
 
-1. DM Atta or mention it in a channel, and get a reaction within a second.
+1. DM atta or mention it in a channel, and get a reaction within a second.
 2. Ask a question, and get an answer in the thread from the router.
 3. Ask for code work on an allowed repository. The router starts a worker in its own worktree.
 4. Watch the worker in the thread as a Slack plan message. Each command, file edit or step is a task.
@@ -22,7 +22,7 @@ When v0 is done, you can:
 6. Reply in the thread while the worker runs. Your reply goes straight to that worker without the router.
 7. Say "stop" in the thread, and the worker stops.
 8. Have scheduled prompts from the config file run as if you had sent them.
-9. Restart your Mac or Atta, and find running work still tracked and reported.
+9. Restart your Mac or atta, and find running work still tracked and reported.
 
 ## What v0 leaves out
 
@@ -41,10 +41,10 @@ These are deliberately out of scope. Each one plugs into an interface v0 already
 | ---------------------- | -------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
 | Interface              | Slack, through a Slack app in Socket Mode, so no public webhook                                                | Slack proof                                                                         |
 | Progress               | One `plan` message per worker run, edited with `chat.update` at most once a second, then the answer at the end | Slack proof: streams close after 10.1 minutes and turn unfinished tasks into errors |
-| Router                 | Atta runs it, on Pi Durable, with `gpt-6.1-terra` at medium, no shell, and only Atta's tools                   | Router proof                                                                        |
+| Router                 | atta runs it, on Pi Durable, with `gpt-6.1-terra` at medium, no shell, and only atta's tools                   | Router proof                                                                        |
 | Workers                | T3 Code, unchanged, pinned nightly. `gpt-6.1-sol` at xhigh, one worktree each. They use your own `~/.codex`    | First proof                                                                         |
 | Talking to T3          | T3's MCP endpoint, signed in with full access                                                                  | First proof                                                                         |
-| Worker callbacks       | Atta's MCP server on localhost, added through T3's worker launch settings                                      | Router proof                                                                        |
+| Worker callbacks       | atta's MCP server on localhost, added through T3's worker launch settings                                      | Router proof                                                                        |
 | Models                 | One ChatGPT subscription for the router and the workers                                                        | Router proof                                                                        |
 | Where it runs          | Your Mac, as background services                                                                               | Your decision                                                                       |
 | Language and libraries | TypeScript, Effect 4, SQLite                                                                                   | Your decision                                                                       |
@@ -54,10 +54,10 @@ These are deliberately out of scope. Each one plugs into an interface v0 already
 The [architecture diagram](architecture.png) shows the parts. In short:
 
 - Channel adapters turn Slack messages and scheduled prompts into events, and send replies, reactions and plan updates back.
-- Core holds the logic: filter, dispatch, router, Atta's tools, worker manager and worker tracker. Core never imports an adapter.
+- Core holds the logic: filter, dispatch, router, atta's tools, worker manager and worker tracker. Core never imports an adapter.
 - Five interfaces connect core to the outside: Channel, Router engine, Runtime, Memory and Store.
 - Adapters implement them: Slack and Clock, Pi Durable, T3, a placeholder memory, and SQLite.
-- One app process wires it all together and runs Atta's MCP server.
+- One app process wires it all together and runs atta's MCP server.
 
 ### Code layout
 
@@ -75,7 +75,7 @@ atta/
       t3/            runtime (MCP client)
       memory-none/
       sqlite/        store and migrations
-    mcp/             Atta MCP server
+    mcp/             atta MCP server
     app/             config, wiring (Layers), main
   test/
   launchd/           service definitions
@@ -108,7 +108,7 @@ Each interface is an Effect service. Signatures are a first draft and will tight
 
 ### Stored data
 
-Atta's SQLite file is the source of truth. Pi Durable keeps only the router's conversation, in its own SQLite file.
+atta's SQLite file is the source of truth. Pi Durable keeps only the router's conversation, in its own SQLite file.
 
 | Table                | Holds                                                                                                     | Notes                                                                          |
 | -------------------- | --------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
@@ -158,10 +158,10 @@ The prompt states the rules the proof showed we need:
 
 ### Workers
 
-Workers run in T3 with your own Codex setup, including your MCP servers, plugins and skills. Atta adds only two things through T3's launch settings for the worker instance:
+Workers run in T3 with your own Codex setup, including your MCP servers, plugins and skills. atta adds only two things through T3's launch settings for the worker instance:
 
 - the reasoning effort (xhigh)
-- Atta's MCP server (`mcp_servers.atta.url`)
+- atta's MCP server (`mcp_servers.atta.url`)
 
 Each brief ends with a fixed footer:
 
@@ -172,7 +172,7 @@ Each brief ends with a fixed footer:
 
 When a worker finishes, the tracker checks which branch it committed to. If it is not the worker's own branch, the tracker flags it in the thread.
 
-### Atta's MCP server
+### atta's MCP server
 
 It listens on `127.0.0.1` only. Workers can call two tools:
 
@@ -197,7 +197,7 @@ v0 trusts the worker ID that the brief gives each worker. Real per-caller authen
 Two launchd services start at login and restart if they exit:
 
 - `com.atta.t3` runs `t3 serve` on `127.0.0.1:3999`, with its data in `~/.atta/t3`
-- `com.atta.app` runs Atta, with logs in `~/.atta/logs`
+- `com.atta.app` runs atta, with logs in `~/.atta/logs`
 
 When the Mac sleeps, Slack disconnects and workers pause. Both recover when it wakes: Slack reconnects, and the tracker reads from its last stored position.
 
@@ -212,7 +212,7 @@ All versions are pinned exactly.
 | `@earendil-works/pi-durable`, `pi-ai`, `chord`, `pi-schema`                    | 1.5.0                         | tested in the router proof. The API changes between releases           |
 | `@slack/bolt`                                                                  | 5.1.0                         | tested in the Slack proof                                              |
 | `@slack/web-api`                                                               | 8.3.0                         | tested in the Slack proof                                              |
-| `@modelcontextprotocol/sdk`                                                    | 1.32.2                        | T3 client and Atta's MCP server, both tested                           |
+| `@modelcontextprotocol/sdk`                                                    | 1.32.2                        | T3 client and atta's MCP server, both tested                           |
 | `vitest`                                                                       | 5.1.0                         | needed by `@effect/vitest` 4.0.7                                       |
 | T3 Code                                                                        | `0.1.7-nightly.20261102.4066` | tested in the first proof. Upgrade on purpose, never automatically     |
 | pnpm                                                                           | 12.x (12.5.1 installed)       | package manager                                                        |
@@ -229,7 +229,7 @@ flowchart LR
   WP0 --> WP4[WP4 Pi Durable router engine]
   WP0 --> WP5[WP5 core logic]
   WP0 --> WP6[WP6 config, Clock, memory]
-  WP0 --> WP7[WP7 Atta MCP server]
+  WP0 --> WP7[WP7 atta MCP server]
   WP1 & WP2 & WP3 & WP4 & WP5 & WP6 & WP7 --> WP8[WP8 wiring and checkpoints]
 ```
 
@@ -252,10 +252,10 @@ At most three Codex workers run at once. That keeps the shared usage limit and t
 | WP1 | SQLite store: migrations for the 6 tables, one repository per table, transactions, duplicate-event protection                                                                                                      | Codex   | `src/adapters/sqlite`                                                 | tests on a temporary database cover duplicate events, transitions and delivery records                                        |
 | WP2 | Slack channel: Bolt in Socket Mode to `InboundEvent`, `reply`, `react`, plan messages with `chat.update` at most once a second, grouping above 50 tasks                                                            | Codex   | `src/adapters/slack`                                                  | tests with a fake Slack client cover deduplication, throttling, grouping and thread keys                                      |
 | WP3 | T3 runtime: MCP client with OAuth tokens, `launch`, `send`, `stop`, `steps` by position, `status`                                                                                                                  | Codex   | `src/adapters/t3`                                                     | tests against recorded T3 responses (from the proofs) cover each call, the last-page position and "interrupted" runs          |
-| WP4 | Router engine: Pi Durable harness, Atta's tools wrapped as Pi tools, `submit`, `settled`, `reply` ending the run, an `atta login` command for ChatGPT sign-in                                                      | Codex   | `src/adapters/pi-durable`, `src/app/login.ts`                         | tests with Pi's in-memory storage and Pi's `faux` model provider cover tool calls, steering, duplicate request IDs and resume |
+| WP4 | Router engine: Pi Durable harness, atta's tools wrapped as Pi tools, `submit`, `settled`, `reply` ending the run, an `atta login` command for ChatGPT sign-in                                                      | Codex   | `src/adapters/pi-durable`, `src/app/login.ts`                         | tests with Pi's in-memory storage and Pi's `faux` model provider cover tool calls, steering, duplicate request IDs and resume |
 | WP5 | Core logic: filter, dispatch, worker manager, worker tracker (steps to plan tasks, finish detection, branch check), the router's tools, the router prompt                                                          | Claude  | `src/core` (except `domain`)                                          | tests with the WP0 fakes cover flow steps 1 to 9 and scenarios 1, 2, 5, 6 and 11                                              |
 | WP6 | Config loading, the Clock channel (cron prompts to events) and the placeholder memory                                                                                                                              | Codex   | `src/app/config.ts`, `src/adapters/clock`, `src/adapters/memory-none` | tests with Effect's test clock show each prompt fires once per slot, also after a restart                                     |
-| WP7 | Atta's MCP server: `ask` and `report` over HTTP on `127.0.0.1`, scoped to workers                                                                                                                                  | Codex   | `src/mcp`                                                             | tests call both tools with the MCP client and check the events they create                                                    |
+| WP7 | atta's MCP server: `ask` and `report` over HTTP on `127.0.0.1`, scoped to workers                                                                                                                                  | Codex   | `src/mcp`                                                             | tests call both tools with the MCP client and check the events they create                                                    |
 | WP8 | Wiring and checkpoints: layers in `src/app`, `main.ts`, launchd services, logs, moving T3's data to `~/.atta/t3`, then the end-to-end scenarios below                                                              | Claude  | `src/app` (except `config.ts` and `login.ts`), `launchd`              | all 11 scenarios pass on your Mac                                                                                             |
 
 ### Rules that keep parallel work safe
@@ -271,11 +271,11 @@ The milestones become checkpoints in WP8. Each one is something you can try in S
 
 | #   | Checkpoint               | Needs                                                                                          | You can try                                                           |
 | --- | ------------------------ | ---------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
-| 1   | Events in, reactions out | WP1, WP2, WP5 (filter, dispatch), WP6                                                          | DM Atta and get 👀. The event is stored once, even when Slack retries |
+| 1   | Events in, reactions out | WP1, WP2, WP5 (filter, dispatch), WP6                                                          | DM atta and get 👀. The event is stored once, even when Slack retries |
 | 2   | Router answers           | WP4, WP5 (router tools)                                                                        | ask a question and get an answer in the thread                        |
 | 3   | Workers                  | WP3, WP5 (manager, tracker). T3 moves to `~/.atta/t3`, which needs one new T3 sign-in from you | ask for a fix, watch the plan fill in, get the result                 |
 | 4   | Threads                  | WP5 (pass-through, steer, stop), WP7                                                           | reply mid-run and see the worker act on it. Say "stop"                |
-| 5   | Running for real         | WP6 (Clock), launchd, recovery                                                                 | restart Atta mid-run and see the plan carry on                        |
+| 5   | Running for real         | WP6 (Clock), launchd, recovery                                                                 | restart atta mid-run and see the plan carry on                        |
 
 ## How we will know it works
 
@@ -286,12 +286,12 @@ The end-to-end checks run against real Slack, T3 and models. v0 is done when all
 | #   | Scenario                                      | Passes when                                                                                                         |
 | --- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
 | 1   | Slack sends the same event twice              | one event row, one router input                                                                                     |
-| 2   | Someone else messages Atta                    | nothing happens except a log line                                                                                   |
+| 2   | Someone else messages atta                    | nothing happens except a log line                                                                                   |
 | 3   | You ask a question                            | 👀 within 1 second, a reply in the thread                                                                           |
 | 4   | You ask for a fix on `sandbox-repo`           | the worker runs in its own worktree, on its own branch. The plan shows its steps, the result arrives, 👀 becomes ✅ |
 | 5   | You reply in the thread while the worker runs | the worker gets it as a steer. The router does not run                                                              |
 | 6   | You say "stop"                                | the worker stops, and the plan shows it stopped                                                                     |
-| 7   | `kill -9` Atta while a worker runs            | after restart, the plan carries on from the last step and the result still arrives                                  |
+| 7   | `kill -9` atta while a worker runs            | after restart, the plan carries on from the last step and the result still arrives                                  |
 | 8   | Restart T3 while a worker runs                | the plan marks the task as failed, and the thread says the run was interrupted                                      |
 | 9   | A worker runs longer than 10 minutes          | the plan message keeps updating, because it does not use a stream                                                   |
 | 10  | A scheduled prompt is due                     | it runs once, in its configured thread                                                                              |
@@ -313,7 +313,7 @@ The end-to-end checks run against real Slack, T3 and models. v0 is done when all
 v0 starts with these defaults unless you change them:
 
 - repositories: `sandbox-repo` first, then the real repositories you list
-- Slack app: a new app called Atta, from the proof's manifest, in the same workspace as the proof
+- Slack app: a new app called atta, from the proof's manifest, in the same workspace as the proof
 - code repository: private on GitHub until v0 works
 - idle workers stay subscribed for 7 days
 

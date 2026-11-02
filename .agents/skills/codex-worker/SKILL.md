@@ -1,6 +1,6 @@
 ---
 name: codex-worker
-description: Run the Codex CLI (gpt-6.1-sol, xhigh) on an Atta work package or a review, in its own git worktree, then check and land its work. Use when building work packages in parallel, or when asking for an independent review of a change.
+description: Run the Codex CLI (gpt-6.1-sol, xhigh) on an atta work package or a review, in its own git worktree, then check and land its work. Use when building work packages in parallel, or when asking for an independent review of a change.
 ---
 
 # Codex as a worker

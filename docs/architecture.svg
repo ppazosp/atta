@@ -9,7 +9,7 @@
 <g id="graph0" class="graph" transform="scale(1 1) rotate(0) translate(21.6 1311.64)">
 <title>atta</title>
 <polygon fill="white" stroke="none" points="-21.6,21.6 -21.6,-1311.64 1262.69,-1311.64 1262.69,21.6 -21.6,21.6"/>
-<text xml:space="preserve" text-anchor="start" x="541.42" y="-1268.04" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="20.00">Atta architecture</text>
+<text xml:space="preserve" text-anchor="start" x="542.92" y="-1268.04" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="20.00">atta architecture</text>
 <text xml:space="preserve" text-anchor="start" x="406.05" y="-1255.64" font-family="Helvetica,sans-Serif" font-size="12.00" fill="#666666">solid = v0 &#160;&#160;· &#160;&#160;dashed = later &#160;&#160;· &#160;&#160;core never imports an adapter &#160;&#160;· &#160;&#160;all on your Mac</text>
 <g id="clust1" class="cluster">
 <title>cluster_ext</title>
@@ -26,9 +26,9 @@
 <g id="clust3" class="cluster">
 <title>cluster_core</title>
 <path fill="#ebf4ff" stroke="#2b6cb0" d="M331,-419.56C331,-419.56 937,-419.56 937,-419.56 943,-419.56 949,-425.56 949,-431.56 949,-431.56 949,-1026.96 949,-1026.96 949,-1032.96 943,-1038.96 937,-1038.96 937,-1038.96 331,-1038.96 331,-1038.96 325,-1038.96 319,-1032.96 319,-1026.96 319,-1026.96 319,-431.57 319,-431.57 319,-425.57 325,-419.56 331,-419.56"/>
-<text xml:space="preserve" text-anchor="start" x="510.25" y="-1016.96" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="20.00">Atta core</text>
-<text xml:space="preserve" text-anchor="start" x="596.5" y="-1016.96" font-family="Helvetica,sans-Serif" font-size="20.00"> &#160;</text>
-<text xml:space="preserve" text-anchor="start" x="607" y="-1016.96" font-family="Helvetica,sans-Serif" font-size="10.00">domain logic only · Effect services</text>
+<text xml:space="preserve" text-anchor="start" x="511.75" y="-1016.96" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="20.00">atta core</text>
+<text xml:space="preserve" text-anchor="start" x="595" y="-1016.96" font-family="Helvetica,sans-Serif" font-size="20.00"> &#160;</text>
+<text xml:space="preserve" text-anchor="start" x="605.5" y="-1016.96" font-family="Helvetica,sans-Serif" font-size="10.00">domain logic only · Effect services</text>
 </g>
 <g id="clust4" class="cluster">
 <title>cluster_app</title>
@@ -126,7 +126,7 @@
 <g id="node21" class="node">
 <title>mcpserver</title>
 <path fill="#ffffff" stroke="#4a5568" stroke-width="2" d="M1144.58,-732.3C1144.58,-732.3 977.42,-732.3 977.42,-732.3 971.42,-732.3 965.42,-726.3 965.42,-720.3 965.42,-720.3 965.42,-705.22 965.42,-705.22 965.42,-699.22 971.42,-693.22 977.42,-693.22 977.42,-693.22 1144.58,-693.22 1144.58,-693.22 1150.58,-693.22 1156.58,-699.22 1156.58,-705.22 1156.58,-705.22 1156.58,-720.3 1156.58,-720.3 1156.58,-726.3 1150.58,-732.3 1144.58,-732.3"/>
-<text xml:space="preserve" text-anchor="start" x="1018.25" y="-717.81" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">Atta MCP server</text>
+<text xml:space="preserve" text-anchor="start" x="1019.38" y="-717.81" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">atta MCP server</text>
 <text xml:space="preserve" text-anchor="start" x="979.62" y="-708.71" font-family="Helvetica,sans-Serif" font-size="9.00">localhost · same tools, scoped per caller</text>
 <text xml:space="preserve" text-anchor="start" x="975.5" y="-699.71" font-family="Helvetica,sans-Serif" font-size="9.00">workers: ask · report &#160;&#160;· &#160;&#160;your agents: more</text>
 </g>
@@ -210,7 +210,7 @@
 <title>router</title>
 <path fill="#fffbea" stroke="#b7791f" stroke-width="2.2" d="M695.08,-736.8C695.08,-736.8 572.92,-736.8 572.92,-736.8 566.92,-736.8 560.92,-730.8 560.92,-724.8 560.92,-724.8 560.92,-700.72 560.92,-700.72 560.92,-694.72 566.92,-688.72 572.92,-688.72 572.92,-688.72 695.08,-688.72 695.08,-688.72 701.08,-688.72 707.08,-694.72 707.08,-700.72 707.08,-700.72 707.08,-724.8 707.08,-724.8 707.08,-730.8 701.08,-736.8 695.08,-736.8"/>
 <text xml:space="preserve" text-anchor="start" x="616" y="-722.31" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">Router</text>
-<text xml:space="preserve" text-anchor="start" x="573.62" y="-713.21" font-family="Helvetica,sans-Serif" font-size="9.00">lean · no shell · only Atta tools</text>
+<text xml:space="preserve" text-anchor="start" x="574" y="-713.21" font-family="Helvetica,sans-Serif" font-size="9.00">lean · no shell · only atta tools</text>
 <text xml:space="preserve" text-anchor="start" x="571" y="-704.21" font-family="Helvetica,sans-Serif" font-size="9.00">prompt · context · uses memory</text>
 <text xml:space="preserve" text-anchor="start" x="589" y="-695.21" font-family="Helvetica,sans-Serif" font-size="9.00">gpt&#45;6.1&#45;terra · medium</text>
 </g>
@@ -252,7 +252,7 @@
 <g id="node13" class="node">
 <title>api</title>
 <path fill="#ffffff" stroke="#2b6cb0" stroke-width="1.2" d="M863.21,-633.22C863.21,-633.22 666.79,-633.22 666.79,-633.22 660.79,-633.22 654.79,-627.22 654.79,-621.22 654.79,-621.22 654.79,-606.14 654.79,-606.14 654.79,-600.14 660.79,-594.14 666.79,-594.14 666.79,-594.14 863.21,-594.14 863.21,-594.14 869.21,-594.14 875.21,-600.14 875.21,-606.14 875.21,-606.14 875.21,-621.22 875.21,-621.22 875.21,-627.22 869.21,-633.22 863.21,-633.22"/>
-<text xml:space="preserve" text-anchor="start" x="739.5" y="-618.73" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">Atta tools</text>
+<text xml:space="preserve" text-anchor="start" x="740.62" y="-618.73" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="11.00">atta tools</text>
 <text xml:space="preserve" text-anchor="start" x="680.25" y="-609.63" font-family="Helvetica,sans-Serif" font-size="9.00">start / message / stop worker · reply · react</text>
 <text xml:space="preserve" text-anchor="start" x="664.88" y="-600.63" font-family="Helvetica,sans-Serif" font-size="9.00">subscribe(thread, worker) · ask · remember (later)</text>
 </g>
