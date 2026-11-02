@@ -64,7 +64,10 @@ export const Event = Schema.TaggedUnion({
   ApprovalDecision: {
     id: EventId,
     source: Schema.Literal("slack"),
-    /** `decision:<proposal ID>`, so only the first decision on a proposal is stored. */
+    /**
+     * `decision:<proposal ID>:<user ID>`, so only a user's first click on a proposal is stored, and someone else's
+     * click cannot take the owner's place.
+     */
     externalId: Schema.NonEmptyString,
     receivedAt: Timestamp,
     proposalId: EventId,

@@ -158,7 +158,7 @@ describe("Slack events", () => {
         _tag: "ApprovalDecision",
         id: "slack:decision:proposal01:1700000002.000100",
         source: "slack",
-        externalId: "decision:proposal01",
+        externalId: "decision:proposal01:U01",
         receivedAt: 123,
         proposalId: "proposal01",
         decision,
@@ -167,7 +167,7 @@ describe("Slack events", () => {
     }).pipe(Effect.provide(fake.layer))
   })
 
-  it.effect("keeps the proposal's deduplication ID across decisions and retries", () => {
+  it.effect("keeps one deduplication ID per proposal and clicker across decisions and retries", () => {
     const fake = makeFakeSlack()
     return Effect.gen(function* () {
       const channel = yield* Channel
@@ -175,7 +175,7 @@ describe("Slack events", () => {
       yield* fake.click("atta_approve", buttonAction("atta_approve", "proposal01", "1"))
       yield* fake.click("atta_reject", buttonAction("atta_reject", "proposal01", "2"))
       const events = yield* channel.events.pipe(Stream.take(3), Stream.runCollect)
-      expect(events.map((event) => event.externalId)).toEqual(Array(3).fill("decision:proposal01"))
+      expect(events.map((event) => event.externalId)).toEqual(Array(3).fill("decision:proposal01:U01"))
       expect(events.map((event) => event.id)).toEqual([
         "slack:decision:proposal01:1",
         "slack:decision:proposal01:1",

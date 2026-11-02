@@ -23,6 +23,7 @@ These rules hold in the code and are covered by tests in `test/core.test.ts` and
 - only your click counts; anyone else's click is dropped
 - a replayed `propose_work` call sends one direct message, and a replayed decision starts one worker
 - in a watched channel, your own messages are observed too, unless you mention atta, which makes them a normal request
+- two things act in a watched channel without Start, because both come from you: a message where you mention atta, and a schedule in your config that targets the channel
 
 ## Setting it up
 

@@ -2,6 +2,7 @@ import { describe, expect, it } from "@effect/vitest"
 import { Effect, Result } from "effect"
 import { OperationId } from "../../core/domain/ids.ts"
 import { Channel } from "../../ports/Channel.ts"
+import { metadata } from "./api.ts"
 import { briefSections } from "./approval.ts"
 import { makeFakeSlack, plan, thread } from "./testing.ts"
 
@@ -227,5 +228,20 @@ describe("Slack approvals", () => {
     expect(unquoted.replaceAll("\n", "")).toBe(
       brief.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll("\n", ""),
     )
+  })
+
+  it.effect("returns the DM it already sent instead of sending a second one after a crash", () => {
+    const fake = makeFakeSlack()
+    fake.responses.history = async () => ({
+      ok: true,
+      messages: [
+        { ts: "1700000000.000900", user: "U-SOMEONE", metadata: metadata("approval01") },
+        { ts: plan.ts, user: "UBOT", metadata: metadata("approval01") },
+      ],
+    })
+    return Effect.gen(function* () {
+      expect(yield* (yield* Channel).requestApproval(request)).toEqual(dmMessage)
+      expect(fake.calls.post).toEqual([])
+    }).pipe(Effect.provide(fake.layer))
   })
 })

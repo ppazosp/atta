@@ -582,7 +582,7 @@ const decision = (proposalId: string, choice: "approve" | "reject", userId = ME)
   _tag: "ApprovalDecision",
   id: EventId.make(`slack:decision:${proposalId}:${choice}`),
   source: "slack",
-  externalId: `decision:${proposalId}`,
+  externalId: `decision:${proposalId}:${userId}`,
   receivedAt: Timestamp.make(99),
   proposalId: EventId.make(proposalId),
   decision: choice,
@@ -714,7 +714,8 @@ describe("watched channels", () => {
       yield* propose
       const [request] = yield* channelCalls("requestApproval")
       expect((yield* take(decision(request!.proposalId, "approve", "U-COLLEAGUE")))?._tag).toBe("Drop")
-      yield* take({ ...decision(request!.proposalId, "reject"), externalId: "decision:again" })
+      // The colleague's click came first, but the owner's still counts.
+      yield* take(decision(request!.proposalId, "reject"))
       expect(yield* (yield* FakeRuntimeControl).calls).toEqual([])
       expect((yield* channelCalls("closeApproval")).map((c) => c.text)).toEqual(["Skipped: Fix add"])
     }).pipe(Effect.provide(watchedHarness)),

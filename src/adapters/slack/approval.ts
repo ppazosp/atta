@@ -1,5 +1,5 @@
 import type { ChatUpdateArguments } from "@slack/web-api"
-import { Effect, Schema } from "effect"
+import { Effect, Option, Schema } from "effect"
 import type { Channel } from "../../ports/Channel.ts"
 import { ChannelError } from "../../ports/Channel.ts"
 import { call, escapeMrkdwn, metadata, Ok, Posted } from "./api.ts"
@@ -52,6 +52,7 @@ type Blocks = Extract<ChatUpdateArguments, { blocks: unknown }>["blocks"]
 
 export const makeApprovalWriter = (
   client: SlackClient,
+  findReply: Channel["Service"]["findReply"],
 ): Pick<Channel["Service"], "requestApproval" | "closeApproval"> => ({
   requestApproval: Effect.fn("Slack.requestApproval")(function* ({
     ownerUserId,
@@ -68,6 +69,12 @@ export const makeApprovalWriter = (
       () => client.conversations.open({ users: ownerUserId }),
       Opened,
     )
+    // A retry after a crash finds the DM it already sent, by the operation ID in its metadata.
+    const sent = yield* findReply({
+      target: { conversation: { team: thread.team, conversation: dm.channel.id } },
+      operationId,
+    })
+    if (Option.isSome(sent)) return sent.value
     const link = yield* call(
       "chat.getPermalink",
       () => client.chat.getPermalink({ channel: thread.conversation, message_ts: thread.rootTs }),

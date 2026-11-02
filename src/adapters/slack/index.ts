@@ -105,7 +105,43 @@ export const SlackChannelLayer = (
       )
       yield* Effect.tryPromise({ try: () => app.start(), catch: (cause) => channelError("start", cause) })
       const plans = makePlanWriter(client, scope)
-      const approvals = makeApprovalWriter(client)
+      const findReply: Channel["Service"]["findReply"] = Effect.fn("Slack.findReply")(function* ({
+        target,
+        operationId,
+      }) {
+        const where = "thread" in target ? target.thread : target.conversation
+        let cursor: string | undefined
+        do {
+          const args = {
+            channel: where.conversation,
+            include_all_metadata: true,
+            limit: 100,
+            ...(cursor ? { cursor } : {}),
+          }
+          const result =
+            "thread" in target
+              ? yield* call(
+                  "conversations.replies",
+                  () => client.conversations.replies({ ...args, ts: target.thread.rootTs }),
+                  Messages,
+                )
+              : yield* call("conversations.history", () => client.conversations.history(args), Messages)
+          for (const message of result.messages) {
+            const tag = Schema.decodeUnknownOption(OperationMetadata)(message.metadata)
+            // Only atta's own messages count: anyone could post a message with the same metadata.
+            if (
+              message.user === options.botUserId &&
+              Option.isSome(tag) &&
+              tag.value.event_payload.operation_id === operationId
+            ) {
+              return Option.some({ team: where.team, conversation: where.conversation, ts: message.ts })
+            }
+          }
+          cursor = "thread" in target ? result.response_metadata?.next_cursor?.trim() : undefined
+        } while (cursor)
+        return Option.none()
+      })
+      const approvals = makeApprovalWriter(client, findReply)
 
       return Channel.of({
         events: Stream.fromQueue(inbox).pipe(
@@ -145,39 +181,7 @@ export const SlackChannelLayer = (
           const where = "thread" in target ? target.thread : target.conversation
           return { team: where.team, conversation: where.conversation, ts: result.ts }
         }),
-        findReply: Effect.fn("Slack.findReply")(function* ({ target, operationId }) {
-          const where = "thread" in target ? target.thread : target.conversation
-          let cursor: string | undefined
-          do {
-            const args = {
-              channel: where.conversation,
-              include_all_metadata: true,
-              limit: 100,
-              ...(cursor ? { cursor } : {}),
-            }
-            const result =
-              "thread" in target
-                ? yield* call(
-                    "conversations.replies",
-                    () => client.conversations.replies({ ...args, ts: target.thread.rootTs }),
-                    Messages,
-                  )
-                : yield* call("conversations.history", () => client.conversations.history(args), Messages)
-            for (const message of result.messages) {
-              const tag = Schema.decodeUnknownOption(OperationMetadata)(message.metadata)
-              // Only atta's own messages count: anyone could post a message with the same metadata.
-              if (
-                message.user === options.botUserId &&
-                Option.isSome(tag) &&
-                tag.value.event_payload.operation_id === operationId
-              ) {
-                return Option.some({ team: where.team, conversation: where.conversation, ts: message.ts })
-              }
-            }
-            cursor = "thread" in target ? result.response_metadata?.next_cursor?.trim() : undefined
-          } while (cursor)
-          return Option.none()
-        }),
+        findReply,
         react: Effect.fn("Slack.react")((message, emoji) =>
           call(
             "reactions.add",

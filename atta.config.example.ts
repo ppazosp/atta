@@ -15,7 +15,7 @@ export default {
   ],
   // Channel IDs atta reads without being mentioned. It never posts there on its own: when it finds work, it sends
   // you a direct message with Start and Skip, and only on Start does a worker run in that channel thread.
-  watchedChannels: ["C0000000000"],
+  watchedChannels: ["C1111111111"],
   router: { model: "gpt-6.1-terra", effort: "medium" },
   workers: { model: "gpt-6.1-sol", effort: "xhigh", t3InstanceId: "codex-worker", idleDays: 7 },
   t3: { url: "http://127.0.0.1:3999/mcp" },

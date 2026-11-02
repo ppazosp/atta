@@ -89,7 +89,8 @@ export const decodeAction = Effect.fn("Slack.decodeAction")(function* (
     _tag: "ApprovalDecision",
     id: EventId.make(`slack:decision:${action.value}:${action.action_ts}`),
     source: "slack",
-    externalId: `decision:${action.value}`,
+    // Per clicker, so someone else's click, which core drops, cannot use up the owner's.
+    externalId: `decision:${action.value}:${body.user.id}`,
     receivedAt: Timestamp.make(receivedAt),
     proposalId: action.value,
     decision: action.action_id === "atta_approve" ? "approve" : "reject",
