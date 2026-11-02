@@ -181,9 +181,11 @@ describe("core flow", () => {
       yield* tracker.poll(workerId)
 
       const finished = yield* channelCalls("finishPlan")
-      expect(finished.map((f) => [f.outcome, f.answer])).toEqual([["completed", "Fixed add, tests pass."]])
+      // The plan shows the outcome; the result goes to the router, which tells the user below the plan.
+      expect(finished.map((f) => [f.outcome, f.answer])).toEqual([["completed", null]])
       const submissions = yield* router.submissions
       expect(submissions.at(-1)?.content).toContain("finished a run: completed")
+      expect(submissions.at(-1)?.content).toContain("Fixed add, tests pass.")
       expect(Option.getOrThrow(yield* (yield* Store).workers.get(workerId)).state).toBe("idle")
     }).pipe(Effect.provide(harness)),
   )

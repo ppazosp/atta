@@ -15,6 +15,23 @@ import { Workers } from "./Workers.ts"
 /** Steps shown as plan tasks. Reasoning, checkpoints and the worker's own messages would only add noise. */
 const shown = new Set<Step["kind"]>(["command", "file_change", "other"])
 
+const TITLE_LENGTH = 60
+
+/**
+ * A short task name for the plan message: the command without its shell wrapper, cut to one short line. The
+ * command's text and output stay in T3; Slack only needs to show what the worker is doing.
+ */
+export const taskTitle = (step: Step): string => {
+  const line = (step.title.split("\n")[0] ?? "").trim()
+  const command = line
+    .replace(/^\$\s*/, "")
+    .replace(/^\/bin\/(?:zsh|bash|sh)\s+-l?c\s+/, "")
+    .replace(/^(['"])(.*?)\1?$/, "$2")
+    .trim()
+  const title = command === "" ? step.kind.replace("_", " ") : command
+  return title.length > TITLE_LENGTH ? `${title.slice(0, TITLE_LENGTH - 1)}…` : title
+}
+
 interface RunView {
   readonly runId: string
   readonly position: number
@@ -65,12 +82,7 @@ export class Tracker extends Context.Service<
           const page = yield* runtime.steps({ worker: worker.runtimeRef!, afterPosition: position })
           for (const step of page.steps) {
             if (step.runId !== runId || !shown.has(step.kind)) continue
-            const task: PlanTask = {
-              id: step.id,
-              title: step.title,
-              status: step.status,
-              detail: step.detail,
-            }
+            const task: PlanTask = { id: step.id, title: taskTitle(step), status: step.status, detail: null }
             const index = tasks.findIndex((t) => t.id === step.id)
             tasks = index === -1 ? [...tasks, task] : tasks.map((t, i) => (i === index ? task : t))
             changed = true

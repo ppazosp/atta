@@ -350,14 +350,11 @@ export class Workers extends Context.Service<
           status.assignedBranch !== null &&
           status.currentBranch !== null &&
           status.assignedBranch !== status.currentBranch
-        const answer = [
-          ...(wrongBranch
-            ? [
-                `Warning: committed on ${status.currentBranch}, not on its own branch ${status.assignedBranch}.`,
-              ]
-            : []),
-          ...(status.finalMessage ? [status.finalMessage] : []),
-        ].join("\n\n")
+        // The plan shows the outcome and the steps; the router tells the result below it. Only a worker that
+        // committed outside its own branch gets a line in the plan itself.
+        const answer = wrongBranch
+          ? `Warning: committed on ${status.currentBranch}, not on its own branch ${status.assignedBranch}.`
+          : ""
         const eventId = EventId.make(`finished:${workerId}:${status.runId}`)
         yield* store.transaction(
           Effect.gen(function* () {
