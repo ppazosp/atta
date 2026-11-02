@@ -1,6 +1,9 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "categories": { "correctness": "error", "suspicious": "warn" },
+  "categories": {
+    "correctness": "error",
+    "suspicious": "warn"
+  },
   "ignorePatterns": [".repos/**", "node_modules/**"],
   "overrides": [
     {
@@ -29,5 +32,13 @@
         ]
       }
     }
-  ]
+  ],
+  "rules": {
+    "no-underscore-dangle": [
+      "warn",
+      {
+        "allow": ["_tag"]
+      }
+    ]
+  }
 }

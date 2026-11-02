@@ -1,0 +1,14 @@
+{
+  "tool": "t3_thread_wait",
+  "args": {
+    "threadId": "mcp:launch:fd2b9c9ab97f7400f1dd9396586bf85db41e27e7796d8a1fcd2799db4583e543",
+    "timeoutMs": 30000
+  },
+  "isError": false,
+  "data": {
+    "threadId": "mcp:launch:fd2b9c9ab97f7400f1dd9396586bf85db41e27e7796d8a1fcd2799db4583e543",
+    "runId": "run:thread:mcp%3Alaunch%3Afd2b9c9ab97f7400f1dd9396586bf85db41e27e7796d8a1fcd2799db4583e543:ordinal:1",
+    "status": "interrupted",
+    "timedOut": false
+  }
+}

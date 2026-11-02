@@ -1,0 +1,25 @@
+{
+  "tool": "t3_project_update",
+  "args": {
+    "projectId": "b7bbe39b-2fbc-44d8-8238-c8527731c5b4",
+    "workspaceRoot": "/home/dev/atta-poc/sandbox-repo"
+  },
+  "isError": false,
+  "data": {
+    "id": "b7bbe39b-2fbc-44d8-8238-c8527731c5b4",
+    "title": "sandbox",
+    "workspaceRoot": "/home/dev/atta-poc/sandbox-repo",
+    "repositoryIdentity": null,
+    "faviconPath": null,
+    "projectIcon": null,
+    "defaultModelSelection": null,
+    "defaultThreadEnvMode": null,
+    "autoPull": false,
+    "scripts": [],
+    "pinnedAt": null,
+    "archivedAt": null,
+    "createdAt": "2026-11-02T12:01:31.949Z",
+    "updatedAt": "2026-11-02T17:00:03.188Z",
+    "deletedAt": null
+  }
+}

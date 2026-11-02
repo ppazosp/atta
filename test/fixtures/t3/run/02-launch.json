@@ -1,0 +1,42 @@
+{
+  "tool": "t3_thread_launch",
+  "args": {
+    "projectId": "b7bbe39b-2fbc-44d8-8238-c8527731c5b4",
+    "title": "fixture: launch",
+    "modelSelection": {
+      "instanceId": "codex",
+      "model": "gpt-6.1-sol",
+      "options": [
+        {
+          "id": "reasoningEffort",
+          "value": "low"
+        }
+      ]
+    },
+    "runtimeMode": "full-access",
+    "workspaceStrategy": {
+      "type": "worktree",
+      "baseRef": "main"
+    },
+    "clientRequestId": "fixture-launch-1",
+    "message": "Run the shell command `sleep 25` and wait for it. Then append the line `# fixture` to README.md, commit it with the message 'docs: fixture line', and reply with the branch name and the commit hash."
+  },
+  "isError": false,
+  "data": {
+    "threadId": "mcp:launch:a17688cdbd90d5ffe8a6f999c44cfccd546a3c66368d328fba8cb008087296e5",
+    "link": "http://127.0.0.1:3999/e0b71443-ae2d-4fc5-8c96-ec9a5980feb6/mcp%3Alaunch%3Aa17688cdbd90d5ffe8a6f999c44cfccd546a3c66368d328fba8cb008087296e5",
+    "projectId": "b7bbe39b-2fbc-44d8-8238-c8527731c5b4",
+    "modelSelection": {
+      "instanceId": "codex",
+      "model": "gpt-6.1-sol",
+      "options": [
+        {
+          "id": "reasoningEffort",
+          "value": "low"
+        }
+      ]
+    },
+    "runId": "run:thread:mcp%3Alaunch%3Aa17688cdbd90d5ffe8a6f999c44cfccd546a3c66368d328fba8cb008087296e5:ordinal:1",
+    "status": "preparing"
+  }
+}

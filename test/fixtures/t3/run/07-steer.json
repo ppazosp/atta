@@ -1,0 +1,18 @@
+{
+  "tool": "t3_thread_send",
+  "args": {
+    "threadId": "mcp:launch:a17688cdbd90d5ffe8a6f999c44cfccd546a3c66368d328fba8cb008087296e5",
+    "mode": "steer",
+    "clientRequestId": "fixture-steer-1",
+    "message": "Also append a second line `# steered` in the same commit."
+  },
+  "isError": false,
+  "data": {
+    "threadId": "mcp:launch:a17688cdbd90d5ffe8a6f999c44cfccd546a3c66368d328fba8cb008087296e5",
+    "link": "http://127.0.0.1:3999/e0b71443-ae2d-4fc5-8c96-ec9a5980feb6/mcp%3Alaunch%3Aa17688cdbd90d5ffe8a6f999c44cfccd546a3c66368d328fba8cb008087296e5",
+    "messageId": "message:mcp:client%3A4d06bfe2-3fd4-48d7-bf40-73ace95f7219:thread-send:fixture-steer-1",
+    "runId": "run:thread:mcp%3Alaunch%3Aa17688cdbd90d5ffe8a6f999c44cfccd546a3c66368d328fba8cb008087296e5:ordinal:1",
+    "status": "running",
+    "delivery": "steered"
+  }
+}

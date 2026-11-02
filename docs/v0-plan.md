@@ -55,7 +55,7 @@ The [architecture diagram](architecture.png) shows the parts. In short:
 
 - Channel adapters turn Slack messages and scheduled prompts into events, and send replies, reactions and plan updates back.
 - Core holds the logic: filter, dispatch, router, atta's tools, worker manager and worker tracker. Core never imports an adapter.
-- Five interfaces connect core to the outside: Channel, Router engine, Runtime, Memory and Store.
+- Ports connect core to the outside: Channel (Slack), ScheduledPrompts, RouterEngine with RouterTools, Runtime (T3), Memory, Store and WorkerApi.
 - Adapters implement them: Slack and Clock, Pi Durable, T3, a placeholder memory, and SQLite.
 - One app process wires it all together and runs atta's MCP server.
 
@@ -102,6 +102,8 @@ Each interface is an Effect service. WP0 writes them as code; the lists below sa
   - `stop(worker)`
   - `steps(worker, afterPosition)` returns steps and the next position. On the last page T3 returns no next position, so the caller keeps its own
   - `status(worker)` returns the run state, the run ID, the current branch and the latest commit
+- ScheduledPrompts: `events: Stream<ScheduledPrompt>`, each slot once, also across restarts (the Clock adapter)
+- RouterTools: the instructions and tools the router runs with. Core provides it; the engine adapter reads it
 - Memory:
   - `recall(query)`
   - `remember(fact)`, which does nothing in v0
@@ -112,15 +114,15 @@ Each interface is an Effect service. WP0 writes them as code; the lists below sa
 
 atta's SQLite file is the source of truth. Pi Durable keeps only the router's conversation, in its own SQLite file.
 
-| Table                | Holds                                                                                                     | Notes                                                                              |
-| -------------------- | --------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| `events`             | every inbound event: Slack message, scheduled prompt, worker step summary, worker report, worker finished | append-only. Unique on source and external ID, so a Slack retry is stored once     |
-| `threads`            | one row per conversation thread, keyed like `slack:T01/D01/1700000000.000100`                             | channel, title, last activity                                                      |
-| `workers`            | one row per worker: T3 thread ID, repo, brief, state, last read position, plan message reference          | state follows the statechart                                                       |
-| `worker_transitions` | every state change, with reason and time                                                                  | append-only                                                                        |
-| `subscriptions`      | which worker listens to which thread                                                                      | many-to-many, as in the article                                                    |
-| `deliveries`         | where each event went (router or a worker) and whether it arrived                                         | gives at-least-once delivery after a crash                                         |
-| `outbox`             | every action atta takes outside: Slack posts and reactions, worker launches, steers and stops             | each has a stable operation ID, a status and the result (Slack message, T3 thread) |
+| Table                | Holds                                                                                                                                                                                                                                         | Notes                                                                              |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `events`             | every event: Slack message, scheduled prompt, worker report, worker finished. Worker steps are not stored: T3 keeps them. The tracker saves its read position, and after a restart rereads the run from the start to rebuild the plan message | append-only. Unique on source and external ID, so a Slack retry is stored once     |
+| `threads`            | one row per conversation thread, keyed like `slack:T01/D01/1700000000.000100`                                                                                                                                                                 | channel, title, last activity                                                      |
+| `workers`            | one row per worker: T3 thread ID, repo, brief, state, last read position, plan message reference                                                                                                                                              | state follows the statechart                                                       |
+| `worker_transitions` | every state change, with reason and time                                                                                                                                                                                                      | append-only                                                                        |
+| `subscriptions`      | which worker listens to which thread                                                                                                                                                                                                          | many-to-many, as in the article                                                    |
+| `deliveries`         | where each event went (router or a worker) and whether it arrived                                                                                                                                                                             | gives at-least-once delivery after a crash                                         |
+| `outbox`             | every action atta takes outside: Slack posts and reactions, worker launches, steers and stops                                                                                                                                                 | each has a stable operation ID, a status and the result (Slack message, T3 thread) |
 
 ### Flow of one message
 
@@ -147,7 +149,7 @@ At startup, atta finishes what a crash cut short:
 
 - outbox entries still pending are retried. A T3 launch is safe to repeat because T3 ignores a repeated request ID. Before reposting to Slack, atta looks for a message tagged with the same operation ID in the thread and reuses it
 - deliveries not marked done are delivered again. The router ignores a repeated request ID
-- each worker that is running or launching is checked with `status`, and the tracker reads on from its stored position
+- each worker that is running or launching is checked with `status`. The tracker rebuilds its plan message by reading the current run's steps from the start (T3 keeps them), then goes on reading from the end
 - Pi Durable resumes the router's own unfinished turn, as the router proof showed
 
 ### The router

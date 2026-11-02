@@ -1,0 +1,122 @@
+{
+  "tool": "t3_thread_read",
+  "args": {
+    "threadId": "mcp:launch:6c24d6d530b6c8d572bad7e76964a6c5af875e67204f0102df3b954312b1a507",
+    "view": "messages",
+    "limit": 10,
+    "runLimit": 5,
+    "maxCharsPerItem": 2000
+  },
+  "isError": false,
+  "data": {
+    "thread": {
+      "threadId": "mcp:launch:6c24d6d530b6c8d572bad7e76964a6c5af875e67204f0102df3b954312b1a507",
+      "projectId": "b7bbe39b-2fbc-44d8-8238-c8527731c5b4",
+      "title": "fixture: interrupted-launch",
+      "link": "http://127.0.0.1:3999/e0b71443-ae2d-4fc5-8c96-ec9a5980feb6/mcp%3Alaunch%3A6c24d6d530b6c8d572bad7e76964a6c5af875e67204f0102df3b954312b1a507",
+      "createdBy": "agent",
+      "creationSource": "mcp",
+      "status": "completed",
+      "latestRunId": "run:thread:mcp%3Alaunch%3A6c24d6d530b6c8d572bad7e76964a6c5af875e67204f0102df3b954312b1a507:ordinal:2",
+      "activeRunId": null,
+      "providerInstanceId": "codex",
+      "model": "gpt-6.1-sol",
+      "runtimeMode": "full-access",
+      "interactionMode": "default",
+      "linkedPullRequest": null,
+      "pullRequests": [],
+      "titleRegeneration": null,
+      "branch": "t3/wait-sleep-command",
+      "worktreePath": "/home/dev/atta-poc/.t3home/worktrees/sandbox-repo/t3-89a7c8f4",
+      "parentThreadId": null,
+      "relationshipToParent": null,
+      "runCount": 2,
+      "itemCount": 8,
+      "pendingRequestCount": 0,
+      "archived": false,
+      "settled": false,
+      "settledAt": null,
+      "snoozed": false,
+      "snoozedUntil": null,
+      "createdAt": "2026-11-02T17:01:27.289Z",
+      "updatedAt": "2026-11-02T17:01:51.429Z"
+    },
+    "recentRuns": [
+      {
+        "runId": "run:thread:mcp%3Alaunch%3A6c24d6d530b6c8d572bad7e76964a6c5af875e67204f0102df3b954312b1a507:ordinal:2",
+        "ordinal": 2,
+        "status": "completed",
+        "providerInstanceId": "codex",
+        "model": "gpt-6.1-sol",
+        "requestedAt": "2026-11-02T17:01:43.898Z",
+        "startedAt": "2026-11-02T17:01:44.027Z",
+        "completedAt": "2026-11-02T17:01:51.429Z"
+      },
+      {
+        "runId": "run:thread:mcp%3Alaunch%3A6c24d6d530b6c8d572bad7e76964a6c5af875e67204f0102df3b954312b1a507:ordinal:1",
+        "ordinal": 1,
+        "status": "cancelled",
+        "providerInstanceId": "codex",
+        "model": "gpt-6.1-sol",
+        "requestedAt": "2026-11-02T17:01:27.295Z",
+        "startedAt": "2026-11-02T17:01:27.469Z",
+        "completedAt": "2026-11-02T17:01:42.410Z"
+      }
+    ],
+    "items": [
+      {
+        "position": 0,
+        "visibility": "local",
+        "sourceThreadId": "mcp:launch:6c24d6d530b6c8d572bad7e76964a6c5af875e67204f0102df3b954312b1a507",
+        "itemId": "turn-item:message:mcp%3Alaunch%3A6c24d6d530b6c8d572bad7e76964a6c5af875e67204f0102df3b954312b1a507",
+        "runId": "run:thread:mcp%3Alaunch%3A6c24d6d530b6c8d572bad7e76964a6c5af875e67204f0102df3b954312b1a507:ordinal:1",
+        "messageId": "mcp:launch:6c24d6d530b6c8d572bad7e76964a6c5af875e67204f0102df3b954312b1a507",
+        "createdBy": "agent",
+        "creationSource": "mcp",
+        "type": "user_message",
+        "status": "completed",
+        "title": null,
+        "text": "Run the shell command `sleep 90` and wait for it, then reply done.",
+        "textTruncated": false,
+        "nextTextOffset": null,
+        "updatedAt": "2026-11-02T17:01:27.295Z"
+      },
+      {
+        "position": 2,
+        "visibility": "local",
+        "sourceThreadId": "mcp:launch:6c24d6d530b6c8d572bad7e76964a6c5af875e67204f0102df3b954312b1a507",
+        "itemId": "turn-item:provider:codex:native-item:msg_0ce0fbd7234b7caf016ae8c1eb35a481918477839ed19fe4c0",
+        "runId": "run:thread:mcp%3Alaunch%3A6c24d6d530b6c8d572bad7e76964a6c5af875e67204f0102df3b954312b1a507:ordinal:1",
+        "messageId": "message:provider:codex:native-item:msg_0ce0fbd7234b7caf016ae8c1eb35a481918477839ed19fe4c0",
+        "createdBy": "agent",
+        "creationSource": "provider",
+        "type": "assistant_message",
+        "status": "completed",
+        "title": null,
+        "text": "I’ll run `sleep 90` and wait for it to finish.",
+        "textTruncated": false,
+        "nextTextOffset": null,
+        "updatedAt": "2026-11-02T17:01:31.336Z"
+      },
+      {
+        "position": 6,
+        "visibility": "local",
+        "sourceThreadId": "mcp:launch:6c24d6d530b6c8d572bad7e76964a6c5af875e67204f0102df3b954312b1a507",
+        "itemId": "turn-item:provider:codex:native-item:msg_0ce0fbd7234b7caf016ae8c1fd14788191a40513bbeb309438",
+        "runId": "run:thread:mcp%3Alaunch%3A6c24d6d530b6c8d572bad7e76964a6c5af875e67204f0102df3b954312b1a507:ordinal:2",
+        "messageId": "message:provider:codex:native-item:msg_0ce0fbd7234b7caf016ae8c1fd14788191a40513bbeb309438",
+        "createdBy": "agent",
+        "creationSource": "provider",
+        "type": "assistant_message",
+        "status": "completed",
+        "title": null,
+        "text": "Interrupted before I could confirm completion.",
+        "textTruncated": false,
+        "nextTextOffset": null,
+        "updatedAt": "2026-11-02T17:01:51.396Z"
+      }
+    ],
+    "nextPosition": 6,
+    "hasMore": false
+  }
+}
