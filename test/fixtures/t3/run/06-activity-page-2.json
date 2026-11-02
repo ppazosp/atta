@@ -1,0 +1,60 @@
+{
+  "tool": "t3_thread_read",
+  "args": {
+    "threadId": "mcp:launch:a17688cdbd90d5ffe8a6f999c44cfccd546a3c66368d328fba8cb008087296e5",
+    "view": "activity",
+    "afterPosition": 3,
+    "limit": 4,
+    "maxCharsPerItem": 400
+  },
+  "isError": false,
+  "data": {
+    "thread": {
+      "threadId": "mcp:launch:a17688cdbd90d5ffe8a6f999c44cfccd546a3c66368d328fba8cb008087296e5",
+      "projectId": "b7bbe39b-2fbc-44d8-8238-c8527731c5b4",
+      "title": "fixture: launch",
+      "link": "http://127.0.0.1:3999/e0b71443-ae2d-4fc5-8c96-ec9a5980feb6/mcp%3Alaunch%3Aa17688cdbd90d5ffe8a6f999c44cfccd546a3c66368d328fba8cb008087296e5",
+      "createdBy": "agent",
+      "creationSource": "mcp",
+      "status": "running",
+      "latestRunId": "run:thread:mcp%3Alaunch%3Aa17688cdbd90d5ffe8a6f999c44cfccd546a3c66368d328fba8cb008087296e5:ordinal:1",
+      "activeRunId": "run:thread:mcp%3Alaunch%3Aa17688cdbd90d5ffe8a6f999c44cfccd546a3c66368d328fba8cb008087296e5:ordinal:1",
+      "providerInstanceId": "codex",
+      "model": "gpt-6.1-sol",
+      "runtimeMode": "full-access",
+      "interactionMode": "default",
+      "linkedPullRequest": null,
+      "pullRequests": [],
+      "titleRegeneration": null,
+      "branch": "t3/append-fixture-readme",
+      "worktreePath": "/home/dev/atta-poc/.t3home/worktrees/sandbox-repo/t3-8bc803b8",
+      "parentThreadId": null,
+      "relationshipToParent": null,
+      "runCount": 1,
+      "itemCount": 4,
+      "pendingRequestCount": 0,
+      "archived": false,
+      "settled": false,
+      "settledAt": null,
+      "snoozed": false,
+      "snoozedUntil": null,
+      "createdAt": "2026-11-02T17:00:03.235Z",
+      "updatedAt": "2026-11-02T17:00:09.020Z"
+    },
+    "recentRuns": [
+      {
+        "runId": "run:thread:mcp%3Alaunch%3Aa17688cdbd90d5ffe8a6f999c44cfccd546a3c66368d328fba8cb008087296e5:ordinal:1",
+        "ordinal": 1,
+        "status": "running",
+        "providerInstanceId": "codex",
+        "model": "gpt-6.1-sol",
+        "requestedAt": "2026-11-02T17:00:03.249Z",
+        "startedAt": "2026-11-02T17:00:03.684Z",
+        "completedAt": null
+      }
+    ],
+    "items": [],
+    "nextPosition": null,
+    "hasMore": false
+  }
+}

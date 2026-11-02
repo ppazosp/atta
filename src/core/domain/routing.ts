@@ -1,0 +1,64 @@
+import { Schema } from "effect"
+import type { Event } from "./event.ts"
+import { WorkerId } from "./ids.ts"
+import type { WorkerState } from "./worker.ts"
+
+/** Where one event goes. Dispatch (WP5) carries it out; this module only decides. */
+export const Route = Schema.TaggedUnion({
+  Drop: { reason: Schema.Literals(["untrusted_sender"]) },
+  ToRouter: {},
+  /** Straight to the thread's worker, without the router: a steer while it runs, a new run while it is idle. */
+  ToWorker: { workerId: WorkerId, mode: Schema.Literals(["steer", "queue"]) },
+  StopWorkers: { workerIds: Schema.Array(WorkerId) },
+})
+export type Route = typeof Route.Type
+
+export interface Subscriber {
+  readonly workerId: WorkerId
+  readonly state: WorkerState
+}
+
+export interface RoutingContext {
+  /** v0 trusts exactly one Slack user. */
+  readonly trustedUserId: string
+  /** Workers subscribed to the event's thread. */
+  readonly subscribers: ReadonlyArray<Subscriber>
+}
+
+const isStopCommand = (text: string) =>
+  text
+    .trim()
+    .toLowerCase()
+    .replace(/[.!]+$/, "") === "stop"
+
+/**
+ * The routing rules from docs/v0-plan.md, "Flow of one message":
+ * - only Slack messages are filtered by sender; events atta creates itself are trusted by kind
+ * - "stop" stops the thread's running workers without the router
+ * - other messages go to the thread's one live worker, or to the router when there are none or several
+ * - scheduled prompts, worker reports and finished runs always go to the router
+ */
+export const route = (event: Event, context: RoutingContext): Route => {
+  switch (event._tag) {
+    case "UserMessage": {
+      if (event.userId !== context.trustedUserId) return Route.cases.Drop.make({ reason: "untrusted_sender" })
+      const running = context.subscribers.filter((s) => s.state === "running")
+      if (isStopCommand(event.text)) {
+        return running.length > 0
+          ? Route.cases.StopWorkers.make({ workerIds: running.map((s) => s.workerId) })
+          : Route.cases.ToRouter.make({})
+      }
+      const live = context.subscribers.filter((s) => s.state === "running" || s.state === "idle")
+      const [only] = live
+      if (live.length !== 1 || only === undefined) return Route.cases.ToRouter.make({})
+      return Route.cases.ToWorker.make({
+        workerId: only.workerId,
+        mode: only.state === "running" ? "steer" : "queue",
+      })
+    }
+    case "ScheduledPrompt":
+    case "WorkerReport":
+    case "WorkerFinished":
+      return Route.cases.ToRouter.make({})
+  }
+}

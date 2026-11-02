@@ -55,7 +55,7 @@ The [architecture diagram](architecture.png) shows the parts. In short:
 
 - Channel adapters turn Slack messages and scheduled prompts into events, and send replies, reactions and plan updates back.
 - Core holds the logic: filter, dispatch, router, atta's tools, worker manager and worker tracker. Core never imports an adapter.
-- Five interfaces connect core to the outside: Channel, Router engine, Runtime, Memory and Store.
+- Ports connect core to the outside: Channel (Slack), ScheduledPrompts, RouterEngine with RouterTools, Runtime (T3), Memory, Store and WorkerApi.
 - Adapters implement them: Slack and Clock, Pi Durable, T3, a placeholder memory, and SQLite.
 - One app process wires it all together and runs atta's MCP server.
 
@@ -102,6 +102,8 @@ Each interface is an Effect service. WP0 writes them as code; the lists below sa
   - `stop(worker)`
   - `steps(worker, afterPosition)` returns steps and the next position. On the last page T3 returns no next position, so the caller keeps its own
   - `status(worker)` returns the run state, the run ID, the current branch and the latest commit
+- ScheduledPrompts: `events: Stream<ScheduledPrompt>`, each slot once, also across restarts (the Clock adapter)
+- RouterTools: the instructions and tools the router runs with. Core provides it; the engine adapter reads it
 - Memory:
   - `recall(query)`
   - `remember(fact)`, which does nothing in v0

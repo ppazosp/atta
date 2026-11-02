@@ -1,7 +1,13 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
-  "entry": ["src/app/main.ts"],
-  "project": ["src/**/*.ts", "test/**/*.ts"],
+  "entry": [
+    "src/app/main.ts",
+    "src/ports/*.ts",
+    "src/core/domain/*.ts",
+    "test/fakes/*.ts",
+    "atta.config.example.ts"
+  ],
+  "project": ["src/**/*.ts", "test/**/*.ts", "atta.config.example.ts"],
   "ignore": [".repos/**"],
   "ignoreDependencies": [
     "@earendil-works/pi-durable",

@@ -14,12 +14,14 @@ The design and the v0 scope are in [docs/v0-plan.md](docs/v0-plan.md). Read it b
 - worker: a throwaway coding agent in T3 Code. It has no memory and works in its own worktree.
 - brief: the self-contained instructions the router gives a worker.
 - plan message: the Slack message that shows a worker's steps as tasks.
-- channel, router engine, runtime, memory, store: the five interfaces in `src/ports`.
+- ports: the interfaces in `src/ports` that core talks to the outside through: Channel (Slack), ScheduledPrompts, RouterEngine with RouterTools, Runtime (T3), Memory, Store and WorkerApi.
 
 ## Where code lives
 
 - `src/core`: domain logic. Never imports `src/adapters`, `src/app`, `src/mcp` or any vendor library. `pnpm lint` enforces this.
-- `src/ports`: the five interfaces, as Effect services.
+- `src/ports`: the ports, as Effect services.
+- `test/fakes`: an in-memory fake for every port, with a control service to drive it from tests.
+- `test/fixtures`: recorded T3 responses and other real data, sanitized.
 - `src/adapters/<name>`: one folder per implementation (Slack, Clock, Pi Durable, T3, SQLite, memory).
 - `src/mcp`: atta's MCP server for workers.
 - `src/app`: config, wiring of layers, and `main.ts`.
