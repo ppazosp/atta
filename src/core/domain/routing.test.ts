@@ -21,6 +21,7 @@ const ctx = (...subscribers: Array<Subscriber>) => ({
   trustedUserId: "U-TRUSTED",
   subscribers,
   threadKnown: true,
+  watched: false,
 })
 
 describe("route", () => {

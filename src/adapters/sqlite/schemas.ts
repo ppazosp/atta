@@ -45,6 +45,8 @@ export const OutboxRow = Schema.Struct({
     "worker_launch",
     "worker_send",
     "worker_stop",
+    "approval_request",
+    "approval_close",
   ]),
   payload: Json,
   status: Schema.Literals(["pending", "done", "failed"]),

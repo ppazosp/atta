@@ -57,6 +57,11 @@ export const AttaConfig = Schema.Struct({
     port: Schema.Int.check(Schema.isBetween({ minimum: 1024, maximum: 65535 })),
   }),
   schedules: Schema.Array(ScheduleConfig),
+  /**
+   * Channels atta reads in full (conversation IDs). Every message there reaches the router as an observation;
+   * atta never posts in them without the trusted user's approval.
+   */
+  watchedChannels: Schema.optionalKey(Schema.Array(Schema.NonEmptyString)),
   /** Where atta keeps its database, router storage and logs. */
   dataDir: Schema.NonEmptyString,
 })

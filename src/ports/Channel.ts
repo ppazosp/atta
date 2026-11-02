@@ -24,8 +24,11 @@ export interface PlanTask {
 export class Channel extends Context.Service<
   Channel,
   {
-    /** DMs, mentions and replies in threads atta is part of. Only `UserMessage` events. */
-    readonly events: Stream.Stream<Extract<Event, { _tag: "UserMessage" }>, ChannelError>
+    /**
+     * DMs, mentions, replies in threads, and every message in channels atta is in (`via: "channel"`; core
+     * decides which channels it watches). Also the trusted user's clicks on proposals.
+     */
+    readonly events: Stream.Stream<Extract<Event, { _tag: "UserMessage" | "ApprovalDecision" }>, ChannelError>
     /** Posts a message tagged with `operationId`. Returns the message; for a new thread it is the thread root. */
     reply(input: {
       readonly target: ReplyTarget
@@ -40,6 +43,24 @@ export class Channel extends Context.Service<
       readonly target: ReplyTarget
       readonly operationId: OperationId
     }): Effect.Effect<Option.Option<MessageRef>, ChannelError>
+    /**
+     * Asks the owner, in a DM, whether to start proposed work, with Start and Skip buttons. A click arrives as an
+     * `ApprovalDecision` event for `proposalId`. Returns the DM message.
+     */
+    requestApproval(input: {
+      readonly ownerUserId: string
+      readonly proposalId: string
+      readonly thread: ThreadRef
+      readonly repo: string
+      readonly title: string
+      readonly why: string
+      readonly operationId: OperationId
+    }): Effect.Effect<MessageRef, ChannelError>
+    /** Replaces the buttons with the outcome, so a decided proposal cannot be clicked again. */
+    closeApproval(input: {
+      readonly message: MessageRef
+      readonly text: string
+    }): Effect.Effect<void, ChannelError>
     react(message: MessageRef, emoji: string): Effect.Effect<void, ChannelError>
     unreact(message: MessageRef, emoji: string): Effect.Effect<void, ChannelError>
     /**
