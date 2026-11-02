@@ -66,8 +66,13 @@ export class Intake extends Context.Service<
             Effect.gen(function* () {
               const { inserted } = yield* store.events.insert(event)
               if (!inserted) return null
-              if (event._tag === "UserMessage")
+              // Only threads the trusted user wrote in, or a schedule names, become places atta may post.
+              if (event._tag === "UserMessage" && event.userId === settings.slack.trustedUserId) {
                 yield* store.threads.touch(threadKey(event.thread), event.receivedAt)
+              }
+              if (event._tag === "ScheduledPrompt" && "thread" in event.target) {
+                yield* store.threads.touch(threadKey(event.target.thread), event.receivedAt)
+              }
               return yield* dispatch(event)
             }),
           ),

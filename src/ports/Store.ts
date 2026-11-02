@@ -78,6 +78,8 @@ export class Store extends Context.Service<
     readonly threads: {
       /** Records activity in a thread, creating it the first time. */
       touch(key: ThreadKey, at: Timestamp): Effect.Effect<void, StoreError>
+      /** Whether atta knows the thread: the trusted user wrote in it, or atta started it. */
+      exists(key: ThreadKey): Effect.Effect<boolean, StoreError>
     }
 
     readonly workers: {
