@@ -32,9 +32,12 @@ export class Channel extends Context.Service<
       readonly text: string
       readonly operationId: OperationId
     }): Effect.Effect<MessageRef, ChannelError>
-    /** Finds a message `reply` already posted with this operation ID, for recovery after a crash. */
+    /**
+     * Finds a message `reply` already posted with this operation ID, for recovery after a crash. For a new thread
+     * the adapter searches the conversation's recent history; for a thread, the thread's replies.
+     */
     findReply(input: {
-      readonly thread: ThreadRef
+      readonly target: ReplyTarget
       readonly operationId: OperationId
     }): Effect.Effect<Option.Option<MessageRef>, ChannelError>
     react(message: MessageRef, emoji: string): Effect.Effect<void, ChannelError>

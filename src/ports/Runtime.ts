@@ -22,6 +22,8 @@ export interface RunStatus {
   /** Set when `state` is finished. A run cut off by a runtime restart is `interrupted`. */
   readonly outcome: RunOutcome | null
   readonly finalMessage: string | null
+  /** The branch the runtime created for the worker. T3 reports it only after the worktree exists, not at launch. */
+  readonly assignedBranch: string | null
   /** Where the worker's worktree is now, read from git, so a worker that switched branches is caught. */
   readonly currentBranch: string | null
   readonly headCommit: string | null
@@ -49,8 +51,9 @@ export class Runtime extends Context.Service<
       readonly operationId: OperationId
     }): Effect.Effect<void, RuntimeError>
     /**
-     * Steps after `afterPosition`, oldest first. `nextPosition` is where to read next; it equals `afterPosition`
-     * when there is nothing new.
+     * Steps after `afterPosition`, oldest first. `nextPosition` is where to read next. It stops just before the
+     * first step that has not finished, so an unfinished step is read again until it finishes; callers update
+     * plan tasks by `Step.id`. It equals `afterPosition` when nothing new has finished.
      */
     steps(input: {
       readonly worker: RuntimeRef

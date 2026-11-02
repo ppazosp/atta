@@ -19,8 +19,15 @@ export interface RouterTool<A = unknown> {
   readonly replaySafe: boolean
   /** Ends the router's run when it succeeds, so the model does not spend a turn on a closing remark. */
   readonly endsRun: boolean
-  /** Returns the text the model sees as the tool result. */
-  readonly run: (input: A) => Effect.Effect<string, ToolError>
+  /**
+   * Returns the text the model sees as the tool result. `call.id` is the engine's ID for this tool call. It stays
+   * the same when a crash makes the engine run the call again, so a tool can derive its outbox operation ID from it.
+   */
+  readonly run: (input: A, call: ToolCall) => Effect.Effect<string, ToolError>
+}
+
+export interface ToolCall {
+  readonly id: string
 }
 
 /** Keeps the input type of `run` tied to the schema. */

@@ -114,15 +114,15 @@ Each interface is an Effect service. WP0 writes them as code; the lists below sa
 
 atta's SQLite file is the source of truth. Pi Durable keeps only the router's conversation, in its own SQLite file.
 
-| Table                | Holds                                                                                                     | Notes                                                                              |
-| -------------------- | --------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| `events`             | every inbound event: Slack message, scheduled prompt, worker step summary, worker report, worker finished | append-only. Unique on source and external ID, so a Slack retry is stored once     |
-| `threads`            | one row per conversation thread, keyed like `slack:T01/D01/1700000000.000100`                             | channel, title, last activity                                                      |
-| `workers`            | one row per worker: T3 thread ID, repo, brief, state, last read position, plan message reference          | state follows the statechart                                                       |
-| `worker_transitions` | every state change, with reason and time                                                                  | append-only                                                                        |
-| `subscriptions`      | which worker listens to which thread                                                                      | many-to-many, as in the article                                                    |
-| `deliveries`         | where each event went (router or a worker) and whether it arrived                                         | gives at-least-once delivery after a crash                                         |
-| `outbox`             | every action atta takes outside: Slack posts and reactions, worker launches, steers and stops             | each has a stable operation ID, a status and the result (Slack message, T3 thread) |
+| Table                | Holds                                                                                                                                                                          | Notes                                                                              |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------- |
+| `events`             | every event: Slack message, scheduled prompt, worker report, worker finished. Worker steps are not stored: T3 keeps them, and the tracker rereads them from its saved position | append-only. Unique on source and external ID, so a Slack retry is stored once     |
+| `threads`            | one row per conversation thread, keyed like `slack:T01/D01/1700000000.000100`                                                                                                  | channel, title, last activity                                                      |
+| `workers`            | one row per worker: T3 thread ID, repo, brief, state, last read position, plan message reference                                                                               | state follows the statechart                                                       |
+| `worker_transitions` | every state change, with reason and time                                                                                                                                       | append-only                                                                        |
+| `subscriptions`      | which worker listens to which thread                                                                                                                                           | many-to-many, as in the article                                                    |
+| `deliveries`         | where each event went (router or a worker) and whether it arrived                                                                                                              | gives at-least-once delivery after a crash                                         |
+| `outbox`             | every action atta takes outside: Slack posts and reactions, worker launches, steers and stops                                                                                  | each has a stable operation ID, a status and the result (Slack message, T3 thread) |
 
 ### Flow of one message
 

@@ -22,7 +22,8 @@ export default {
       name: "morning",
       cron: "0 9 * * 1-5",
       timezone: "Europe/Madrid",
-      conversation: { team: "T0000000000", conversation: "C0000000000" },
+      // A new thread in a channel each time. Use { thread: { team, conversation, rootTs } } for one thread.
+      target: { conversation: { team: "T0000000000", conversation: "C0000000000" } },
       text: "What did my workers finish yesterday, and what is still open?",
     },
   ],

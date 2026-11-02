@@ -66,6 +66,10 @@ export class Store extends Context.Service<
       /** Stores the event unless one with the same source and external ID exists. Returns the stored one. */
       insert(event: Event): Effect.Effect<{ readonly inserted: boolean; readonly event: Event }, StoreError>
       get(id: EventId): Effect.Effect<Option.Option<Event>, StoreError>
+      /** Marks an event as routed (delivered somewhere, or dropped). Written in the same transaction as its deliveries. */
+      markDispatched(id: EventId, at: Timestamp): Effect.Effect<void, StoreError>
+      /** Events stored but not yet routed, oldest first, for recovery after a crash. */
+      undispatched(): Effect.Effect<ReadonlyArray<Event>, StoreError>
     }
 
     readonly threads: {

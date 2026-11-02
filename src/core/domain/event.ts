@@ -1,6 +1,7 @@
 import { Schema } from "effect"
 import { EventId, RunId, Timestamp, WorkerId } from "./ids.ts"
-import { Conversation, MessageRef, ThreadRef } from "./thread.ts"
+import { ScheduleTarget } from "./config.ts"
+import { MessageRef, ThreadRef } from "./thread.ts"
 import { RunOutcome } from "./worker.ts"
 
 /**
@@ -22,7 +23,7 @@ export const Event = Schema.TaggedUnion({
     text: Schema.String,
     via: Schema.Literals(["dm", "mention", "thread_reply"]),
   },
-  /** A prompt from the config file, due at `slot`. It starts a new thread in `conversation`. */
+  /** A prompt from the config file, due at `slot`, for an existing thread or a new one. */
   ScheduledPrompt: {
     id: EventId,
     source: Schema.Literal("clock"),
@@ -30,7 +31,7 @@ export const Event = Schema.TaggedUnion({
     receivedAt: Timestamp,
     schedule: Schema.NonEmptyString,
     slot: Timestamp,
-    conversation: Conversation,
+    target: ScheduleTarget,
     text: Schema.NonEmptyString,
   },
   /** A worker called `report` on atta's MCP server. */

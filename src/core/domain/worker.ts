@@ -60,6 +60,8 @@ export const StepStatus = Schema.Literals(["pending", "in_progress", "complete",
 export type StepStatus = typeof StepStatus.Type
 
 export const Step = Schema.Struct({
+  /** Stable across reads, so a step read again (still running, then finished) updates the same plan task. */
+  id: Schema.NonEmptyString,
   position: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),
   runId: RunId,
   kind: StepKind,

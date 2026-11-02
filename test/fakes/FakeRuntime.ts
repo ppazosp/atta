@@ -20,22 +20,38 @@ export type RuntimeCall =
   | { readonly _tag: "stop"; readonly worker: string }
 
 interface WorkerScript {
-  readonly runs: number
+  readonly runs: ReadonlyArray<RunStatus>
   readonly steps: ReadonlyArray<Step>
-  readonly status: RunStatus
 }
 
-const runId = (worker: RuntimeRef, n: number) => RunId.make(`${worker}:run:${n}`)
+const runIdOf = (worker: RuntimeRef, n: number) => RunId.make(`${worker}:run:${n}`)
+const branchOf = (worker: RuntimeRef) => `atta/${worker}`
+
+const newRun = (worker: RuntimeRef, n: number): RunStatus => ({
+  runId: runIdOf(worker, n),
+  state: "running",
+  outcome: null,
+  finalMessage: null,
+  assignedBranch: branchOf(worker),
+  currentBranch: branchOf(worker),
+  headCommit: null,
+})
 
 /**
- * Lets a test play the runtime: add steps, finish a run, fail the next launch, and read what atta asked for.
- * Launches are idempotent per operation ID, like T3's `clientRequestId`.
+ * Lets a test play the runtime. It behaves like T3 where core depends on it:
+ * - a repeated launch with the same operation ID returns the same worker
+ * - launch does not report the branch; `status` does
+ * - `steps` stops before the first unfinished step, so it is read again until it finishes
+ * - `status` answers for the run asked about; `startContinuation` adds a run of the runtime's own, as T3 does
+ *   after a restart, which must not change the status of the run atta started
  */
 export class FakeRuntimeControl extends Context.Service<
   FakeRuntimeControl,
   {
-    addSteps(worker: RuntimeRef, steps: ReadonlyArray<Step>): Effect.Effect<void>
-    setStatus(worker: RuntimeRef, status: Partial<RunStatus>): Effect.Effect<void>
+    /** Adds steps, or replaces steps with the same ID (a running step that finished). */
+    putSteps(worker: RuntimeRef, steps: ReadonlyArray<Step>): Effect.Effect<void>
+    finishRun(worker: RuntimeRef, runId: RunId, status: Partial<RunStatus>): Effect.Effect<void>
+    startContinuation(worker: RuntimeRef): Effect.Effect<RunId>
     failNextLaunch(message: string): Effect.Effect<void>
     readonly calls: Effect.Effect<ReadonlyArray<RuntimeCall>>
   }
@@ -59,6 +75,10 @@ export const FakeRuntimeLayer = Layer.effectContext(
       )
     const put = (worker: RuntimeRef, script: WorkerScript) =>
       Ref.update(workers, (all) => new Map(all).set(worker, script))
+    const addRun = (worker: RuntimeRef, script: WorkerScript) => {
+      const run = newRun(worker, script.runs.length + 1)
+      return put(worker, { ...script, runs: [...script.runs, run] }).pipe(Effect.as(run.runId))
+    }
 
     const runtime = Runtime.of({
       launch: ({ repo, brief, operationId }) =>
@@ -66,42 +86,22 @@ export const FakeRuntimeLayer = Layer.effectContext(
           yield* record({ _tag: "launch", repo, briefText: brief.text, operationId })
           const failure = yield* Ref.getAndSet(launchFailure, null)
           if (failure !== null) return yield* new RuntimeError({ operation: "launch", message: failure })
-          const existing = (yield* Ref.get(launches)).get(operationId)
-          const worker = existing ?? RuntimeRef.make(`fake-thread-${(yield* Ref.get(launches)).size + 1}`)
-          if (!existing) {
-            yield* Ref.update(launches, (all) => new Map(all).set(operationId, worker))
-            yield* put(worker, {
-              runs: 1,
-              steps: [],
-              status: {
-                runId: runId(worker, 1),
-                state: "running",
-                outcome: null,
-                finalMessage: null,
-                currentBranch: `atta/${worker}`,
-                headCommit: null,
-              },
-            })
-          }
-          return {
-            runtimeRef: worker,
-            runId: runId(worker, 1),
-            branch: `atta/${worker}`,
-            worktreePath: `/tmp/${worker}`,
-          }
+          const known = yield* Ref.get(launches)
+          const existing = known.get(operationId)
+          if (existing)
+            return { runtimeRef: existing, runId: runIdOf(existing, 1), branch: null, worktreePath: null }
+          const worker = RuntimeRef.make(`fake-thread-${known.size + 1}`)
+          yield* Ref.update(launches, (all) => new Map(all).set(operationId, worker))
+          yield* put(worker, { runs: [newRun(worker, 1)], steps: [] })
+          return { runtimeRef: worker, runId: runIdOf(worker, 1), branch: null, worktreePath: null }
         }),
       send: ({ worker, text, mode }) =>
         Effect.gen(function* () {
           yield* record({ _tag: "send", worker, text, mode })
           const script = yield* get(worker, "send")
-          if (mode === "steer") return { runId: script.status.runId }
-          const runs = script.runs + 1
-          yield* put(worker, {
-            ...script,
-            runs,
-            status: { ...script.status, runId: runId(worker, runs), state: "running", outcome: null },
-          })
-          return { runId: runId(worker, runs) }
+          const current = script.runs.at(-1)
+          if (mode === "steer" && current?.state === "running") return { runId: current.runId }
+          return { runId: yield* addRun(worker, script) }
         }),
       stop: ({ worker }) =>
         Effect.gen(function* () {
@@ -109,28 +109,61 @@ export const FakeRuntimeLayer = Layer.effectContext(
           const script = yield* get(worker, "stop")
           yield* put(worker, {
             ...script,
-            status: { ...script.status, state: "finished", outcome: "stopped" },
+            runs: script.runs.map((r) =>
+              r.state === "running" ? { ...r, state: "finished" as const, outcome: "stopped" as const } : r,
+            ),
           })
         }),
       steps: ({ worker, afterPosition }) =>
         get(worker, "steps").pipe(
           Effect.map((script) => {
             const steps = script.steps.filter((s) => s.position > afterPosition)
-            return { steps, nextPosition: steps.at(-1)?.position ?? afterPosition }
+            const unfinished = steps.find((s) => s.status === "pending" || s.status === "in_progress")
+            const nextPosition =
+              unfinished !== undefined ? unfinished.position - 1 : (steps.at(-1)?.position ?? afterPosition)
+            return { steps, nextPosition: Math.max(nextPosition, afterPosition) }
           }),
         ),
-      status: ({ worker }) => get(worker, "status").pipe(Effect.map((script) => script.status)),
+      status: ({ worker, runId }) =>
+        get(worker, "status").pipe(
+          Effect.flatMap((script) => {
+            const run = script.runs.find((r) => r.runId === runId)
+            return run
+              ? Effect.succeed(run)
+              : Effect.fail(new RuntimeError({ operation: "status", message: `unknown run ${runId}` }))
+          }),
+        ),
     })
 
     const control = FakeRuntimeControl.of({
-      addSteps: (worker, steps) =>
-        get(worker, "addSteps").pipe(
-          Effect.flatMap((script) => put(worker, { ...script, steps: [...script.steps, ...steps] })),
+      putSteps: (worker, steps) =>
+        get(worker, "putSteps").pipe(
+          Effect.flatMap((script) => {
+            const ids = new Set(steps.map((s) => s.id))
+            const merged = [...script.steps.filter((s) => !ids.has(s.id)), ...steps].toSorted(
+              (a, b) => a.position - b.position,
+            )
+            return put(worker, { ...script, steps: merged })
+          }),
           Effect.orDie,
         ),
-      setStatus: (worker, status) =>
-        get(worker, "setStatus").pipe(
-          Effect.flatMap((script) => put(worker, { ...script, status: { ...script.status, ...status } })),
+      finishRun: (worker, runId, status) =>
+        get(worker, "finishRun").pipe(
+          Effect.flatMap((script) =>
+            put(worker, {
+              ...script,
+              runs: script.runs.map((r) =>
+                r.runId === runId
+                  ? { ...r, state: "finished" as const, outcome: "completed" as const, ...status }
+                  : r,
+              ),
+            }),
+          ),
+          Effect.orDie,
+        ),
+      startContinuation: (worker) =>
+        get(worker, "startContinuation").pipe(
+          Effect.flatMap((script) => addRun(worker, script)),
           Effect.orDie,
         ),
       failNextLaunch: (message) => Ref.set(launchFailure, message),

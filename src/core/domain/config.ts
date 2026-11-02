@@ -1,5 +1,12 @@
 import { Schema } from "effect"
-import { Conversation } from "./thread.ts"
+import { Conversation, ThreadRef } from "./thread.ts"
+
+/** Where a scheduled prompt goes: an existing thread, or a new thread in a conversation. */
+export const ScheduleTarget = Schema.Union([
+  Schema.Struct({ thread: ThreadRef }),
+  Schema.Struct({ conversation: Conversation }),
+])
+export type ScheduleTarget = typeof ScheduleTarget.Type
 
 const ReasoningEffort = Schema.Literals(["low", "medium", "high", "xhigh"])
 
@@ -17,8 +24,7 @@ export const ScheduleConfig = Schema.Struct({
   /** Five-field cron expression, in `timezone`. */
   cron: Schema.NonEmptyString,
   timezone: Schema.NonEmptyString,
-  /** Where the scheduled prompt starts its thread. */
-  conversation: Conversation,
+  target: ScheduleTarget,
   text: Schema.NonEmptyString,
 })
 export type ScheduleConfig = typeof ScheduleConfig.Type

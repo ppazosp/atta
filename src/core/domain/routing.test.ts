@@ -44,6 +44,10 @@ describe("route", () => {
     expect(route(message("go on"), ctx(w("w1", "running"), w("w2", "idle")))._tag).toBe("ToRouter")
   })
 
+  it("asks the router when the thread has another subscriber, even one that cannot run", () => {
+    expect(route(message("go on"), ctx(w("w1", "running"), w("w2", "interrupted")))._tag).toBe("ToRouter")
+  })
+
   it("asks the router when the only worker is interrupted or failed", () => {
     expect(route(message("continue"), ctx(w("w1", "interrupted")))._tag).toBe("ToRouter")
     expect(route(message("try again"), ctx(w("w1", "failed")))._tag).toBe("ToRouter")
@@ -69,7 +73,7 @@ describe("route", () => {
         source: "clock",
         schedule: "daily",
         slot: at,
-        conversation: { team: "T01", conversation: "C01" },
+        target: { conversation: { team: "T01", conversation: "C01" } },
         text: "summarise",
       },
       { ...base, _tag: "WorkerReport", source: "worker", workerId: WorkerId.make("w1"), text: "blocked" },

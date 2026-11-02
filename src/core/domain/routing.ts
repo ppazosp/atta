@@ -35,7 +35,8 @@ const isStopCommand = (text: string) =>
  * The routing rules from docs/v0-plan.md, "Flow of one message":
  * - only Slack messages are filtered by sender; events atta creates itself are trusted by kind
  * - "stop" stops the thread's running workers without the router
- * - other messages go to the thread's one live worker, or to the router when there are none or several
+ * - other messages go to the thread's worker when it is the only subscriber and is running or idle; otherwise to
+ *   the router
  * - scheduled prompts, worker reports and finished runs always go to the router
  */
 export const route = (event: Event, context: RoutingContext): Route => {
@@ -48,9 +49,11 @@ export const route = (event: Event, context: RoutingContext): Route => {
           ? Route.cases.StopWorkers.make({ workerIds: running.map((s) => s.workerId) })
           : Route.cases.ToRouter.make({})
       }
-      const live = context.subscribers.filter((s) => s.state === "running" || s.state === "idle")
-      const [only] = live
-      if (live.length !== 1 || only === undefined) return Route.cases.ToRouter.make({})
+      // Pass-through only when the thread has exactly one subscriber and it can take a message.
+      const [only, ...others] = context.subscribers
+      if (only === undefined || others.length > 0 || (only.state !== "running" && only.state !== "idle")) {
+        return Route.cases.ToRouter.make({})
+      }
       return Route.cases.ToWorker.make({
         workerId: only.workerId,
         mode: only.state === "running" ? "steer" : "queue",

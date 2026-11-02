@@ -1,4 +1,4 @@
-import { Effect, Layer, Option, Ref } from "effect"
+import { Context, Effect, Layer, Option, Ref, Semaphore } from "effect"
 import type { Event } from "../../src/core/domain/event.ts"
 import type { WorkerId } from "../../src/core/domain/ids.ts"
 import type { ThreadKey } from "../../src/core/domain/thread.ts"
@@ -9,6 +9,7 @@ import { Store } from "../../src/ports/Store.ts"
 
 interface State {
   readonly events: ReadonlyArray<Event>
+  readonly dispatched: ReadonlySet<string>
   readonly threads: ReadonlyMap<string, number>
   readonly workers: ReadonlyMap<string, Worker>
   readonly transitions: ReadonlyArray<Transition>
@@ -19,6 +20,7 @@ interface State {
 
 const empty: State = {
   events: [],
+  dispatched: new Set(),
   threads: new Map(),
   workers: new Map(),
   transitions: [],
@@ -27,22 +29,52 @@ const empty: State = {
   outbox: new Map(),
 }
 
-/** An in-memory Store. A failed transaction restores the state it started from. */
+/** The working copy of the transaction the current fiber is in. */
+class CurrentTx extends Context.Service<CurrentTx, Ref.Ref<State>>()("atta/test/FakeStore/CurrentTx") {}
+
+/**
+ * An in-memory Store that behaves like SQLite where it matters to core: a transaction works on its own copy,
+ * nobody else sees its writes until it commits, a failure discards them, and transactions and lone writes run
+ * one at a time. A transaction inside a transaction joins the outer one.
+ */
 export const makeFakeStore = Effect.gen(function* () {
   const state = yield* Ref.make(empty)
-  const update = (f: (s: State) => State) => Ref.update(state, f)
-  const read = <A>(f: (s: State) => A) => Ref.get(state).pipe(Effect.map(f))
+  const lock = yield* Semaphore.make(1)
+  const update = (f: (s: State) => State) =>
+    Effect.serviceOption(CurrentTx).pipe(
+      Effect.flatMap(
+        Option.match({
+          onNone: () => lock.withPermits(1)(Ref.update(state, f)),
+          onSome: (tx) => Ref.update(tx, f),
+        }),
+      ),
+    )
+  const read = <A>(f: (s: State) => A) =>
+    Effect.serviceOption(CurrentTx).pipe(
+      Effect.flatMap(Option.match({ onNone: () => Ref.get(state), onSome: (tx) => Ref.get(tx) })),
+      Effect.map(f),
+    )
 
   const store = Store.of({
     transaction: (effect) =>
-      Effect.gen(function* () {
-        const before = yield* Ref.get(state)
-        return yield* effect.pipe(Effect.onError(() => Ref.set(state, before)))
-      }),
+      Effect.serviceOption(CurrentTx).pipe(
+        Effect.flatMap((outer) =>
+          Option.isSome(outer)
+            ? effect
+            : lock.withPermits(1)(
+                Effect.gen(function* () {
+                  const tx = yield* Ref.make(yield* Ref.get(state))
+                  const result = yield* effect.pipe(Effect.provideService(CurrentTx, tx))
+                  yield* Ref.set(state, yield* Ref.get(tx))
+                  return result
+                }),
+              ),
+        ),
+      ),
     events: {
       insert: (event) =>
         Effect.gen(function* () {
-          const existing = (yield* Ref.get(state)).events.find(
+          const existing = (yield* read((s) => s.events)).find(
             (e) => e.source === event.source && e.externalId === event.externalId,
           )
           if (existing) return { inserted: false, event: existing }
@@ -50,6 +82,8 @@ export const makeFakeStore = Effect.gen(function* () {
           return { inserted: true, event }
         }),
       get: (id) => read((s) => Option.fromNullishOr(s.events.find((e) => e.id === id))),
+      markDispatched: (id) => update((s) => ({ ...s, dispatched: new Set(s.dispatched).add(id) })),
+      undispatched: () => read((s) => s.events.filter((e) => !s.dispatched.has(e.id))),
     },
     threads: {
       touch: (key, at) => update((s) => ({ ...s, threads: new Map(s.threads).set(key, at) })),
