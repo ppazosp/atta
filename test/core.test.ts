@@ -493,6 +493,44 @@ describe("core flow", () => {
     }).pipe(Effect.provide(harness)),
   )
 
+  it.effect("ignores a replayed send that no longer fits the worker (re-review)", () =>
+    Effect.gen(function* () {
+      const store = yield* Store
+      const runtime = yield* Runtime
+      const { workerId, runtimeRef, runId } = yield* startWorker
+      // A steer was sent on run 1 but not recorded; then run 1 finished and run 2 started.
+      const lost = OperationId.make("send:old-steer")
+      yield* (yield* Outbox).enqueue(lost, "worker_send", {
+        workerId,
+        worker: runtimeRef,
+        text: "x",
+        mode: "steer",
+      })
+      yield* runtime.send({ worker: runtimeRef, text: "x", mode: "steer", operationId: lost })
+      yield* (yield* FakeRuntimeControl).finishRun(runtimeRef, runId, {})
+      yield* (yield* Tracker).poll(workerId)
+      yield* take(slack("next task"))
+      const run2 = Option.getOrThrow(yield* store.workers.get(workerId)).runId
+      expect(run2).not.toBe(runId)
+      yield* recover
+      const worker = Option.getOrThrow(yield* store.workers.get(workerId))
+      expect(worker.runId).toBe(run2)
+      expect(worker.state).toBe("running")
+      expect(Option.getOrThrow(yield* store.outbox.get(lost)).status).toBe("done")
+    }).pipe(Effect.provide(harness)),
+  )
+
+  it.effect("runs one outbox operation once when two callers race (re-review)", () =>
+    Effect.gen(function* () {
+      const outbox = yield* Outbox
+      yield* take(slack("hi"))
+      const op = OperationId.make("reply:race")
+      yield* outbox.enqueue(op, "slack_reply", { target: { thread }, text: "once" })
+      yield* Effect.all([outbox.run(op), outbox.run(op)], { concurrency: "unbounded" })
+      expect((yield* channelCalls("reply")).filter((r) => r.text === "once")).toHaveLength(1)
+    }).pipe(Effect.provide(harness)),
+  )
+
   it.effect("delivers stored events that a crash left unrouted or undelivered", () =>
     Effect.gen(function* () {
       const store = yield* Store

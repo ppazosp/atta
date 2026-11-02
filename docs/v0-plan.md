@@ -154,6 +154,7 @@ At startup, atta finishes what a crash cut short:
 - each worker that is running or launching is checked with `status`. The tracker rebuilds its plan message by reading the current run's steps from the start (T3 keeps them), then goes on reading from the end
 - Pi Durable resumes the router's own unfinished turn, as the router proof showed
 - known gap: an event the router was still answering when atta died keeps its 👀; the answer itself still arrives
+- known gap: if a worker's run ends in the instant between atta checking it and a steer arriving, and T3 turns the steer into a new run, atta keeps following the old run and logs a warning
 
 ### The router
 

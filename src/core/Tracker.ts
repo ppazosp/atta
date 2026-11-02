@@ -138,6 +138,11 @@ export class Tracker extends Context.Service<
           .pipe(Effect.catch((error) => Effect.logWarning(`tracking ${workerId} failed`, error)))
 
       const tick = Effect.gen(function* () {
+        for (const worker of yield* store.workers.inStates(["launching"])) {
+          yield* workers
+            .resumeLaunch(worker.id)
+            .pipe(Effect.catch((error) => Effect.logWarning(`launch of ${worker.id} still pending`, error)))
+        }
         for (const worker of yield* store.workers.inStates(["running", "stopping"])) yield* poll(worker.id)
         const cutoff = (yield* now) - settings.workers.idleDays * DAY_MS
         for (const worker of yield* store.workers.inStates(["idle"])) {

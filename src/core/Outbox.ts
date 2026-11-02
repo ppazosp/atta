@@ -1,4 +1,4 @@
-import { Context, Effect, Layer, Option, Result, Schema } from "effect"
+import { Context, Effect, Layer, Option, Ref, Result, Schema, Semaphore } from "effect"
 import { RunId, RuntimeRef, WorkerId, type OperationId } from "./domain/ids.ts"
 import { Conversation, MessageRef, ThreadRef } from "./domain/thread.ts"
 import { Brief, RunOutcome } from "./domain/worker.ts"
@@ -161,7 +161,20 @@ export class Outbox extends Context.Service<
         }
       })
 
-      const run = Effect.fn("Outbox.run")(function* <E>(
+      // One run of an operation at a time: a second caller waits, then finds it done instead of acting again.
+      const running = yield* Ref.make<ReadonlyMap<string, Semaphore.Semaphore>>(new Map())
+      const lockFor = (operationId: OperationId) =>
+        Ref.modify(
+          running,
+          (all): readonly [Semaphore.Semaphore, ReadonlyMap<string, Semaphore.Semaphore>] => {
+            const existing = all.get(operationId)
+            if (existing) return [existing, all]
+            const created = Semaphore.makeUnsafe(1)
+            return [created, new Map(all).set(operationId, created)]
+          },
+        )
+
+      const runUnlocked = Effect.fn("Outbox.run")(function* <E>(
         operationId: OperationId,
         handlers: Handlers<E> = {},
       ) {
@@ -199,6 +212,11 @@ export class Outbox extends Context.Service<
         )
         return outcome.success
       })
+
+      const run = <E = never>(operationId: OperationId, handlers: Handlers<E> = {}) =>
+        lockFor(operationId).pipe(
+          Effect.flatMap((lock) => lock.withPermits(1)(runUnlocked(operationId, handlers))),
+        )
 
       return Outbox.of({
         enqueue: (operationId, kind, payload) =>

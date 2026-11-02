@@ -78,6 +78,8 @@ export class Workers extends Context.Service<
      * and a `WorkerFinished` event is stored for the router. Returns the event ID. Call while holding the lock.
      */
     finishRun(workerId: WorkerId, end: RunEnd): Effect.Effect<EventId, StoreError | WorkerUnavailable>
+    /** Retries a launch that has not landed (the tracker calls it for workers still launching). */
+    resumeLaunch(workerId: WorkerId): Effect.Effect<Worker, Failure>
     /** Handlers for an outbox entry found pending at startup, so its result lands where it belongs. */
     recoveryHandlers(entry: OutboxEntry): Handlers<StoreError | WorkerUnavailable>
     /** Retires an idle worker whose last change is older than `cutoff`. Does nothing otherwise. */
@@ -188,14 +190,18 @@ export class Workers extends Context.Service<
               Effect.mapError((e) => new StoreError({ operation: "worker_send", message: e.message })),
             )
             const worker = yield* get(workerId)
-            // A new run gets its own plan message. So does a steer the runtime turned into a new run.
-            const newRun = mode === "queue" || sent.runId !== worker.runId
-            if (mode === "steer" && newRun) {
-              yield* Effect.logWarning(
-                `steer to ${workerId} started run ${sent.runId} instead of joining ${worker.runId}`,
-              )
+            // A steer joins the run atta follows; it never changes it. If the runtime turned it into a new run,
+            // atta keeps following the old one (a known gap in docs/v0-plan.md).
+            if (mode === "steer" && sent.runId !== worker.runId) {
+              yield* Effect.logWarning(`steer to ${workerId} went to run ${sent.runId}, not ${worker.runId}`)
             }
-            yield* move(workerId, input, newRun ? { runId: sent.runId, planMessage: null } : {})
+            const patch = mode === "queue" ? { runId: sent.runId, planMessage: null } : {}
+            // A send replayed at startup may no longer fit (the worker moved on since). Record it, change nothing.
+            yield* move(workerId, input, patch).pipe(
+              Effect.catchTag("WorkerUnavailable", (error) =>
+                Effect.logWarning(`send to ${workerId} no longer applies: ${error.message}`),
+              ),
+            )
           }),
       })
 
@@ -234,12 +240,26 @@ export class Workers extends Context.Service<
                 })
               }),
             )
-            const worker = yield* get(workerId)
-            if (worker.state !== "launching") return worker
-            yield* outbox.run(launchOp(workerId), launchHandlers(workerId)).pipe(Effect.ignore)
-            return yield* get(workerId)
+            return yield* launchLocked(workerId)
           }),
         )
+      })
+
+      /** Runs a launch that has not landed yet. A launch the runtime refused leaves the worker failed. */
+      const launchLocked = Effect.fn("Workers.launch")(function* (workerId: WorkerId) {
+        const worker = yield* get(workerId)
+        if (worker.state !== "launching") return worker
+        const outcome = yield* outbox.run(launchOp(workerId), launchHandlers(workerId)).pipe(Effect.result)
+        const after = yield* get(workerId)
+        if (after.state === "launching") {
+          const reason = Result.isFailure(outcome) ? outcome.failure.message : "its result was not recorded"
+          return yield* new WorkerUnavailable({
+            workerId,
+            state: after.state,
+            message: `the launch has not landed yet (${reason}); atta retries it`,
+          })
+        }
+        return after
       })
 
       const send = Effect.fn("Workers.send")(function* (
@@ -447,6 +467,7 @@ export class Workers extends Context.Service<
         stop,
         finishRun,
         expireIdle,
+        resumeLaunch: (workerId) => locked(workerId, launchLocked(workerId)),
         recoveryHandlers,
         update,
         get,
