@@ -79,6 +79,7 @@ describe("Slack plans", () => {
         type: "plan",
         title: initial.title,
         tasks: [
+          { type: "task_card", task_id: "task-1", title: "Task 1", status: "in_progress" },
           {
             type: "task_card",
             task_id: "task-2",
@@ -95,8 +96,8 @@ describe("Slack plans", () => {
           { type: "task_card", task_id: "task-4", title: "Task 4", status: "error" },
         ],
       })
-      // The title line and the three started steps; the pending step waits until it starts.
-      expect(blocksOf(fake.calls.post[0])).toHaveLength(4)
+      // The title line and every step: a step not started yet shows as in progress, since Slack has no pending card.
+      expect(blocksOf(fake.calls.post[0])).toHaveLength(5)
     }).pipe(Effect.provide(fake.layer))
   })
 

@@ -41,17 +41,16 @@ export const planContent = Effect.fn("Slack.planContent")(function* (
       ...tasks.filter((task) => !grouped.has(task)),
     ]
   }
-  // Slack's timeline style: a title line, then one task card per step that has started. A card shows its own
-  // spinner, ✓ or ⚠️ (a step inside a plan block shows only a dot when done). Cards cannot be pending, so
-  // steps the worker has not started yet are left out until it starts them.
-  const cards = visible.filter((task) => task.status !== "pending")
+  // Slack's timeline style: a title line, then one task card per step of the plan. A card shows its own spinner,
+  // ✓ or ⚠️ (a step inside a plan block shows only a dot when done). Slack rejects a pending card, so a step the
+  // worker has not started yet spins too: the whole plan stays visible, and each step gets its ✓ as it finishes.
   const blocks: Blocks = [
     { type: "section", text: { type: "mrkdwn", text: `*${escapeMrkdwn(title)}*` } },
-    ...cards.map((task) => ({
+    ...visible.map((task) => ({
       type: "task_card" as const,
       task_id: task.id,
       title: task.title,
-      status: task.status as "in_progress" | "complete" | "error",
+      status: task.status === "pending" ? ("in_progress" as const) : task.status,
       ...(task.detail === null
         ? {}
         : {

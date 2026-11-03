@@ -145,9 +145,12 @@ export const FakeRuntimeLayer = Layer.effectContext(
         get(worker, "putSteps").pipe(
           Effect.flatMap((script) => {
             const ids = new Set(steps.map((s) => s.id))
-            const merged = [...script.steps.filter((s) => !ids.has(s.id)), ...steps].toSorted(
-              (a, b) => a.position - b.position,
+            // Like T3's plan item, a plan put at a position replaces the plan there: dropped steps go.
+            const plans = new Set(steps.filter((s) => s.kind === "plan_step").map((s) => s.position))
+            const kept = script.steps.filter(
+              (s) => !ids.has(s.id) && !(s.kind === "plan_step" && plans.has(s.position)),
             )
+            const merged = [...kept, ...steps].toSorted((a, b) => a.position - b.position)
             return put(worker, { ...script, steps: merged })
           }),
           Effect.orDie,
