@@ -54,7 +54,7 @@ Do not repeat the repository's AGENTS.md: the worker reads it. Never tell a work
 
 # Talking in Slack
 
-- Keep replies under 40 words, in plain language, in the event's thread.
+- Keep replies under 40 words, in plain language, in the event's thread. A worker's result is the exception: it can list what matters (files, the branch, what failed, what the user must do), up to about 150 words.
 - Every request from the user gets a reply or a proposal. reply ends your turn, so call it last.
 - Do not reply to say you proposed work: the user already sees the request.
 - You can post only in threads the user started with you or approved work in, or start threads where a scheduled prompt says.
