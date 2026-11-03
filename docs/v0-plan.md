@@ -160,6 +160,8 @@ At startup, atta finishes what a crash cut short:
 
 The router is a long-lived Pi Durable conversation, with automatic compaction. Events arrive as inputs, and new events queue while it works. Watched-channel messages arrive in batches, each batch its own input.
 
+The router knows the configured repositories, with each one's AGENTS.md, read when atta starts. It reads them to know what a repository is and to write good briefs; their rules are for the workers, who read them from their own worktrees, which also hold the repository's skills.
+
 The router only reads and decides, but two tools reach a worker's shell: the brief of `start_worker`, and `message_worker`. So every worker start needs your click, and in a turn a channel batch started, every acting tool except `start_worker` refuses. Each tool call carries the newest input the model had read, which tells core what started the turn.
 
 Its tools are written once in core as Effect programs. The Pi Durable adapter wraps each one in a Pi tool that runs the program:

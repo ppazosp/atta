@@ -1,8 +1,9 @@
+import { readFile } from "node:fs/promises"
 import { homedir } from "node:os"
 import { join, resolve } from "node:path"
 import { pathToFileURL } from "node:url"
 import { Config, Context, Effect, Layer, type Redacted, Schema } from "effect"
-import { Settings } from "../core/Settings.ts"
+import { RepoGuides, Settings } from "../core/Settings.ts"
 import { AttaConfig } from "../core/domain/config.ts"
 
 export class ConfigLoadError extends Schema.TaggedError<ConfigLoadError>()("ConfigLoadError", {
@@ -58,3 +59,28 @@ export const SettingsLayer = (path = "./atta.config.ts") =>
       return Context.make(Settings, settings).pipe(Context.add(SlackTokens, tokens))
     }),
   )
+
+/** The most of a repository's AGENTS.md the router gets. A longer file is cut, with a note saying so. */
+const MAX_GUIDE = 40_000
+
+/** Reads each repository's AGENTS.md for the router. A repository without one simply has no guide. */
+export const RepoGuidesLayer = Layer.effect(
+  RepoGuides,
+  Effect.gen(function* () {
+    const settings = yield* Settings
+    const guides = new Map<string, string>()
+    for (const repo of settings.repos) {
+      const text = yield* Effect.tryPromise(() => readFile(join(repo.path, "AGENTS.md"), "utf8")).pipe(
+        Effect.catch(() =>
+          Effect.logInfo(`${repo.name} has no AGENTS.md at ${repo.path}`).pipe(Effect.as(null)),
+        ),
+      )
+      if (text === null) continue
+      guides.set(
+        repo.name,
+        text.length > MAX_GUIDE ? `${text.slice(0, MAX_GUIDE)}\n\n(cut at ${MAX_GUIDE} characters)` : text,
+      )
+    }
+    return RepoGuides.of(guides)
+  }),
+)

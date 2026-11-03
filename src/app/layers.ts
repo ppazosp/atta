@@ -11,7 +11,7 @@ import { CoreBaseLayer, CoreLayer } from "../core/run.ts"
 import { Settings } from "../core/Settings.ts"
 import { McpServerLayer } from "../mcp/index.ts"
 import { ChannelError } from "../ports/Channel.ts"
-import { SettingsLayer, SlackTokens } from "./config.ts"
+import { RepoGuidesLayer, SettingsLayer, SlackTokens } from "./config.ts"
 
 /** Where atta keeps its files, all under `dataDir`. */
 export const paths = (dataDir: string) => ({
@@ -86,9 +86,14 @@ const EngineLive = Layer.unwrap(
  * rest of core, then atta's MCP server for workers.
  */
 export const AppLayer = (configPath: string) => {
-  const ports = Layer.mergeAll(StoreLive, ChannelLive, RuntimeLive, MemoryNoneLayer, ClockLayer).pipe(
-    Layer.provideMerge(SettingsLayer(configPath)),
-  )
+  const ports = Layer.mergeAll(
+    StoreLive,
+    ChannelLive,
+    RuntimeLive,
+    MemoryNoneLayer,
+    ClockLayer,
+    RepoGuidesLayer,
+  ).pipe(Layer.provideMerge(SettingsLayer(configPath)))
   const base = CoreBaseLayer.pipe(Layer.provideMerge(ports))
   const engine = EngineLive.pipe(Layer.provideMerge(base))
   const core = CoreLayer.pipe(Layer.provideMerge(engine))
