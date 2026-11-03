@@ -2,7 +2,7 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>Label</key><string>com.atta.app</string>
+  <key>Label</key><string>__LABEL__</string>
   <key>ProgramArguments</key>
   <array>
     <string>/bin/sh</string>
@@ -12,11 +12,12 @@
   <key>EnvironmentVariables</key>
   <dict>
     <key>PATH</key><string>__PATH__</string>
+    <key>ATTA_HOME</key><string>__ATTA_HOME__</string>
   </dict>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
   <key>ThrottleInterval</key><integer>10</integer>
-  <key>StandardOutPath</key><string>__HOME__/.atta/logs/atta.log</string>
-  <key>StandardErrorPath</key><string>__HOME__/.atta/logs/atta.log</string>
+  <key>StandardOutPath</key><string>__ATTA_HOME__/logs/atta.log</string>
+  <key>StandardErrorPath</key><string>__ATTA_HOME__/logs/atta.log</string>
 </dict>
 </plist>

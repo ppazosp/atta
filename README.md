@@ -25,7 +25,7 @@ You need Node 24, pnpm 12, the Codex CLI signed in to your ChatGPT account, and 
 2. Create the Slack app from [slack/manifest.json](slack/manifest.json) (api.slack.com, Create an app, From a manifest). Install it, then put its bot token and app-level token in `~/.atta/env` (copy [.env.example](.env.example), mode 0600).
 3. Copy [atta.config.example.ts](atta.config.example.ts) to `~/.atta/atta.config.ts` and fill in your Slack member ID, repositories and schedules.
 4. Prepare T3 Code's data folder: `sh scripts/setup-t3.sh`. It adds a worker instance that uses your own Codex setup and atta's MCP server.
-5. Start the services: `sh scripts/install-services.sh`. It installs and starts T3 Code and atta with launchd. Logs are in `~/.atta/logs`.
+5. Start the services: `sh scripts/install-services.sh`. It installs and starts T3 Code and atta with launchd. Logs are in `~/.atta/logs`. To run a second atta beside it, for another Slack workspace, put its config and env in `~/.atta-<name>` and run `ATTA_INSTANCE=<name> sh scripts/install-services.sh`: it installs `com.atta.app.<name>`, which shares T3 Code.
 6. Open T3 Code once (`http://127.0.0.1:3999`), add your repositories as projects, and put their project IDs in the config.
 7. Sign in, once each: `ATTA_CONFIG=~/.atta/atta.config.ts node --experimental-strip-types src/app/main.ts login t3` (approve with full access), then `... login router` (Sign in with ChatGPT).
 

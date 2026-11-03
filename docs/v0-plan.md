@@ -222,7 +222,7 @@ v0 trusts the worker ID that the brief gives each worker. Real per-caller authen
 Two launchd services start at login and restart if they exit:
 
 - `com.atta.t3` runs `t3 serve` on `127.0.0.1:3999`, with its data in `~/.atta/t3`
-- `com.atta.app` runs atta, with logs in `~/.atta/logs`
+- `com.atta.app` runs atta, with logs in `~/.atta/logs`. A named instance, `com.atta.app.<name>`, runs a second atta from `~/.atta-<name>`, for another Slack workspace
 
 When the Mac sleeps, Slack disconnects and workers pause. Both recover when it wakes: Slack reconnects, and the tracker reads from its last stored position.
 
