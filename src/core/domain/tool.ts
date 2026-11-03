@@ -28,6 +28,11 @@ export interface RouterTool<A = unknown> {
 
 export interface ToolCall {
   readonly id: string
+  /**
+   * The newest input in the router's conversation when the call ran: the event the turn answers, or a later steer.
+   * `null` when the engine could not find one. Tools use it to tell what the turn was started by.
+   */
+  readonly input: string | null
 }
 
 /** Keeps the input type of `run` tied to the schema. */

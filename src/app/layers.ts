@@ -3,7 +3,7 @@ import { WebClient } from "@slack/web-api"
 import { Effect, Layer, Redacted, Schema } from "effect"
 import { ClockLayer } from "../adapters/clock/index.ts"
 import { MemoryNoneLayer } from "../adapters/memory-none/index.ts"
-import { PiDurableObserverEngineLayer, PiDurableRouterEngineLayer } from "../adapters/pi-durable/index.ts"
+import { PiDurableRouterEngineLayer } from "../adapters/pi-durable/index.ts"
 import { SlackChannelLayer } from "../adapters/slack/index.ts"
 import { SqliteStoreLayer } from "../adapters/sqlite/index.ts"
 import { T3RuntimeLayer } from "../adapters/t3/index.ts"
@@ -17,7 +17,6 @@ import { SettingsLayer, SlackTokens } from "./config.ts"
 export const paths = (dataDir: string) => ({
   database: join(dataDir, "atta.sqlite"),
   router: join(dataDir, "router.sqlite"),
-  observer: join(dataDir, "observer.sqlite"),
   routerCredentials: join(dataDir, "pi"),
   t3Tokens: join(dataDir, "t3-mcp"),
 })
@@ -69,24 +68,15 @@ const RuntimeLive = Layer.unwrap(
   ),
 )
 
-// The observer reads watched channels in its own conversation, on the router's model and ChatGPT sign-in.
 const EngineLive = Layer.unwrap(
   settings.pipe(
     Effect.map((s) =>
-      Layer.mergeAll(
-        PiDurableRouterEngineLayer({
-          storagePath: paths(s.dataDir).router,
-          credentialsDir: paths(s.dataDir).routerCredentials,
-          modelId: s.router.model,
-          thinkingLevel: s.router.effort,
-        }),
-        PiDurableObserverEngineLayer({
-          storagePath: paths(s.dataDir).observer,
-          credentialsDir: paths(s.dataDir).routerCredentials,
-          modelId: s.router.model,
-          thinkingLevel: s.router.effort,
-        }),
-      ),
+      PiDurableRouterEngineLayer({
+        storagePath: paths(s.dataDir).router,
+        credentialsDir: paths(s.dataDir).routerCredentials,
+        modelId: s.router.model,
+        thinkingLevel: s.router.effort,
+      }),
     ),
   ),
 )

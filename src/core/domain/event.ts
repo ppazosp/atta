@@ -11,7 +11,7 @@ import { RunOutcome } from "./worker.ts"
  * fires twice is stored once.
  */
 export const Event = Schema.TaggedUnion({
-  /** A message from someone in Slack: a DM, a mention, or a reply in a thread atta is part of. */
+  /** A message from someone in Slack: a DM, a mention, or any message in a channel atta is in. */
   UserMessage: {
     id: EventId,
     source: Schema.Literal("slack"),
@@ -21,7 +21,7 @@ export const Event = Schema.TaggedUnion({
     message: MessageRef,
     userId: Schema.NonEmptyString,
     text: Schema.String,
-    /** `channel`: a message in a watched channel that does not mention atta, from anyone. */
+    /** `channel`: a top-level message that does not mention atta, from anyone, in a channel atta is in. */
     via: Schema.Literals(["dm", "mention", "thread_reply", "channel"]),
   },
   /** A prompt from the config file, due at `slot`, for an existing thread or a new one. */
@@ -45,8 +45,8 @@ export const Event = Schema.TaggedUnion({
     text: Schema.String,
   },
   /**
-   * The router proposed work on a message it observed in a watched channel. Stored so the owner's decision can
-   * find it; it is never routed.
+   * The router proposed a worker (`start_worker`): every worker waits for the owner's approval. Stored so the
+   * decision can find it; it is never routed.
    */
   WorkProposed: {
     id: EventId,

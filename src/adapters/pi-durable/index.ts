@@ -1,19 +1,14 @@
 import { BACKGROUND_CONTEXT, withAbortSignal } from "@earendil-works/chord/context"
+import type { Context } from "@earendil-works/chord/context"
 import type { Models } from "@earendil-works/pi-ai/models"
 import { createModels } from "@earendil-works/pi-ai/models"
 import { openaiProvider } from "@earendil-works/pi-ai/providers/openai"
-import { createRegistry, defineExtension, defineTool, Harness } from "@earendil-works/pi-durable"
-import type { ToolExecutionResult } from "@earendil-works/pi-durable"
+import { createRegistry, defineExtension, defineTool, Harness, UserEntry } from "@earendil-works/pi-durable"
+import type { ToolExecutionApi, ToolExecutionResult, Tx } from "@earendil-works/pi-durable"
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node"
 import { Effect, Layer, Schema } from "effect"
 import type { AnyRouterTool } from "../../core/domain/tool.ts"
-import {
-  EngineError,
-  ObserverEngine,
-  ObserverTools,
-  RouterEngine,
-  RouterTools,
-} from "../../ports/RouterEngine.ts"
+import { EngineError, RouterEngine, RouterTools } from "../../ports/RouterEngine.ts"
 import { openCredentials } from "./credentials.ts"
 
 export { login } from "./login.ts"
@@ -53,6 +48,35 @@ export const toolParameters = (input: AnyRouterTool["input"]) => {
   return Object.keys(definitions).length === 0 ? schema : { ...schema, $defs: definitions }
 }
 
+/** Entries per page, and pages, a tool reads back to find the input its turn answers. */
+const INPUT_PAGE = 100
+const INPUT_PAGES = 20
+
+/**
+ * The text of the newest input in the calling conversation: the event the turn answers, or a later steer. Only
+ * input entries count; a compaction summary or a reset's handoff is also a user message, but atta did not write it.
+ */
+export const latestInput = async (api: ToolExecutionApi, context: Context): Promise<string | null> => {
+  let cursor: Parameters<Tx["scanEntries"]>[2]
+  for (let page = 0; page < INPUT_PAGES; page++) {
+    const result = await api.commit(
+      (tx) => tx.scanEntries({ conversationId: api.conversationId, order: "descending" }, INPUT_PAGE, cursor),
+      context,
+    )
+    for (const entry of result.items) {
+      if (!UserEntry.is(entry)) continue
+      const message = entry.model?.findLast((m) => m.role === "user")
+      if (message === undefined) continue
+      return typeof message.content === "string"
+        ? message.content
+        : message.content.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("\n")
+    }
+    if (result.next === undefined) return null
+    cursor = result.next
+  }
+  return null
+}
+
 const wrapTool = (tool: AnyRouterTool) => {
   return defineTool({
     name: tool.name,
@@ -65,8 +89,12 @@ const wrapTool = (tool: AnyRouterTool) => {
           const input = yield* Schema.decodeUnknownEffect(tool.input)(args).pipe(
             Effect.mapError((error) => String(error)),
           )
+          const latest = yield* Effect.tryPromise({
+            try: () => latestInput(api, context),
+            catch: (error) => `Could not read the conversation: ${String(error)}`,
+          })
           const text = yield* tool
-            .run(input, { id: api.callId })
+            .run(input, { id: api.callId, input: latest })
             .pipe(Effect.mapError((error) => error.message))
           return {
             output: [{ type: "text", text }],
@@ -94,16 +122,6 @@ export const PiDurableRouterEngineLayer = (
   Layer.effect(
     RouterEngine,
     Effect.flatMap(RouterTools, (tools) => makeEngine(config, tools, options)),
-  )
-
-/** The observer's conversation: the same engine, in its own storage, with the observer's tools only. */
-export const PiDurableObserverEngineLayer = (
-  config: PiDurableRouterConfig,
-  options: EngineOptions = {},
-): Layer.Layer<ObserverEngine, EngineError, ObserverTools> =>
-  Layer.effect(
-    ObserverEngine,
-    Effect.flatMap(ObserverTools, (tools) => makeEngine(config, tools, options)),
   )
 
 const makeEngine = (config: PiDurableRouterConfig, router: RouterTools["Service"], options: EngineOptions) =>

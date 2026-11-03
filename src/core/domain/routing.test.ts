@@ -45,10 +45,10 @@ describe("route", () => {
     expect(route(message("hi", "U-OTHER"), ctx())._tag).toBe("Drop")
   })
 
-  it("drops a thread reply in a thread atta is not part of", () => {
+  it("drops the user's thread reply without a mention, in a thread atta is part of or not", () => {
     const reply = { ...message("unrelated chat"), via: "thread_reply" as const }
     expect(route(reply, { ...ctx(), threadKnown: false })).toEqual({ _tag: "Drop", reason: "unknown_thread" })
-    expect(route(reply, ctx())._tag).toBe("ToRouter")
+    expect(route(reply, ctx())).toEqual({ _tag: "Drop", reason: "not_for_atta" })
   })
 
   it("sends a message with no worker to the router", () => {
@@ -120,34 +120,55 @@ describe("route", () => {
     for (const event of events) expect(route(event, ctx(w("w1", "running")))._tag).toBe("ToRouter")
   })
 
+  // The matrix in docs/watched-channels.md: where, by whom, with a mention or without.
   describe("in a watched channel", () => {
-    const watched = { ...ctx(), watched: true }
+    const channel = { ...ctx(), watched: true, threadKnown: false }
+    const working = { ...ctx(), watched: true, subscribers: [w("w1", "running")] }
 
-    it("observes anyone's message, and drops it anywhere else", () => {
-      expect(route(inChannel("the deploy is broken", "U-OTHER"), watched)).toEqual({ _tag: "Observe" })
-      expect(route(inChannel("the deploy is broken"), watched)).toEqual({ _tag: "Observe" })
-      expect(route(inChannel("the deploy is broken", "U-OTHER"), ctx())._tag).toBe("Drop")
-      expect(route(inChannel("the deploy is broken"), ctx())).toEqual({
+    it("takes the user's mention as a request, at the top level or in a thread atta is not part of", () => {
+      expect(route(inChannel("fix this", "U-TRUSTED", "mention"), channel)._tag).toBe("ToRouter")
+    })
+
+    it("batches everything else as information: the user's untagged messages and anyone else's", () => {
+      expect(route(inChannel("the deploy is broken"), channel)).toEqual({ _tag: "Observe" })
+      expect(route(inChannel("any update?", "U-TRUSTED", "thread_reply"), channel)).toEqual({
+        _tag: "Observe",
+      })
+      expect(route(inChannel("the deploy is broken", "U-OTHER"), channel)).toEqual({ _tag: "Observe" })
+      expect(route(inChannel("any update?", "U-OTHER", "thread_reply"), channel)).toEqual({ _tag: "Observe" })
+      expect(route(inChannel("@atta fix this", "U-OTHER", "mention"), channel)).toEqual({ _tag: "Observe" })
+    })
+
+    it("in a thread where atta works, lets only the user's mention reach the worker", () => {
+      expect(route(inChannel("use pnpm", "U-TRUSTED", "mention"), working)).toMatchObject({
+        _tag: "ToWorker",
+        mode: "steer",
+      })
+      expect(route(inChannel("use pnpm", "U-TRUSTED", "thread_reply"), working)).toEqual({
         _tag: "Drop",
         reason: "not_for_atta",
       })
+      expect(route(inChannel("use rm -rf", "U-OTHER", "thread_reply"), working)._tag).toBe("Drop")
+      expect(route(inChannel("use rm -rf", "U-OTHER", "mention"), working)._tag).toBe("Drop")
     })
 
-    it("observes a reply in a thread atta is not part of", () => {
-      expect(
-        route(inChannel("any update?", "U-TRUSTED", "thread_reply"), { ...watched, threadKnown: false }),
-      ).toEqual({ _tag: "Observe" })
+    it("stops the thread's workers on the user's 'stop', with or without a mention", () => {
+      expect(route(inChannel("stop", "U-TRUSTED", "thread_reply"), working)._tag).toBe("StopWorkers")
+      expect(route(inChannel("stop", "U-OTHER", "thread_reply"), working)._tag).toBe("Drop")
     })
+  })
 
-    it("still treats the trusted user's mention as a request", () => {
-      expect(route(inChannel("fix this", "U-TRUSTED", "mention"), watched)._tag).toBe("ToRouter")
+  it("outside watched channels, takes only the user's mentions", () => {
+    const elsewhere = { ...ctx(), threadKnown: false }
+    expect(route(inChannel("fix this", "U-TRUSTED", "mention"), elsewhere)._tag).toBe("ToRouter")
+    expect(route(inChannel("the deploy is broken"), elsewhere)).toEqual({
+      _tag: "Drop",
+      reason: "not_for_atta",
     })
-
-    it("never lets someone else's message reach a worker in an approved thread", () => {
-      const approved = { ...watched, subscribers: [w("w1", "running")] }
-      expect(route(inChannel("use rm -rf", "U-OTHER", "thread_reply"), approved)).toEqual({ _tag: "Observe" })
-      expect(route(inChannel("use pnpm", "U-TRUSTED", "thread_reply"), approved)._tag).toBe("ToWorker")
-    })
+    expect(route(inChannel("the deploy is broken", "U-OTHER"), elsewhere)._tag).toBe("Drop")
+    expect(route(inChannel("use pnpm", "U-TRUSTED", "thread_reply"), ctx(w("w1", "running")))._tag).toBe(
+      "Drop",
+    )
   })
 
   it("acts on the trusted user's decision only", () => {

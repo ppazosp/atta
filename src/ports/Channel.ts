@@ -13,6 +13,13 @@ export class ChannelError extends Schema.TaggedError<ChannelError>()("ChannelErr
 /** Reply in an existing thread, or start a new thread in a conversation (scheduled prompts). */
 export type ReplyTarget = { readonly thread: ThreadRef } | { readonly conversation: Conversation }
 
+/** One message read back from Slack. `userId` is null for messages from bots, atta included. */
+export interface ReadMessage {
+  readonly userId: string | null
+  readonly ts: string
+  readonly text: string
+}
+
 export interface PlanTask {
   readonly id: string
   readonly title: string
@@ -43,6 +50,14 @@ export class Channel extends Context.Service<
       readonly target: ReplyTarget
       readonly operationId: OperationId
     }): Effect.Effect<Option.Option<MessageRef>, ChannelError>
+    /**
+     * Reads a thread, or the latest messages of a conversation, oldest first: at most `limit`, the newest ones.
+     * Slack refuses conversations atta is not a member of.
+     */
+    readConversation(input: {
+      readonly target: ReplyTarget
+      readonly limit: number
+    }): Effect.Effect<ReadonlyArray<ReadMessage>, ChannelError>
     /**
      * Asks the owner, in a DM, whether to start proposed work, with Start and Skip buttons. A click arrives as an
      * `ApprovalDecision` event for `proposalId`. Returns the DM message.

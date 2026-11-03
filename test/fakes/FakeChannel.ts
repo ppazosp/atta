@@ -1,7 +1,7 @@
 import { Context, Effect, Layer, Option, Queue, Ref, Stream } from "effect"
 import type { Event } from "../../src/core/domain/event.ts"
 import type { MessageRef } from "../../src/core/domain/thread.ts"
-import type { PlanTask, ReplyTarget } from "../../src/ports/Channel.ts"
+import type { PlanTask, ReadMessage, ReplyTarget } from "../../src/ports/Channel.ts"
 import { Channel } from "../../src/ports/Channel.ts"
 
 type UserMessage = Extract<Event, { _tag: "UserMessage" | "ApprovalDecision" }>
@@ -53,6 +53,8 @@ export const FakeChannelLayer = Layer.effectContext(
   Effect.gen(function* () {
     const inbox = yield* Queue.unbounded<UserMessage>()
     const calls = yield* Ref.make<ReadonlyArray<ChannelCall>>([])
+    // Every pushed message, as Slack would keep it in the conversation's history.
+    const history = yield* Ref.make<ReadonlyArray<Extract<UserMessage, { _tag: "UserMessage" }>>>([])
     const record = (call: ChannelCall) => Ref.update(calls, (all) => [...all, call])
     let ts = 1_700_000_000
     const nextMessage = (team: string, conversation: string): MessageRef => ({
@@ -81,6 +83,18 @@ export const FakeChannelLayer = Layer.effectContext(
             return Option.none()
           }),
         ),
+      readConversation: ({ target, limit }) =>
+        Ref.get(history).pipe(
+          Effect.map((all): ReadonlyArray<ReadMessage> => {
+            const inTarget = all.filter((m) =>
+              "thread" in target
+                ? m.thread.conversation === target.thread.conversation &&
+                  m.thread.rootTs === target.thread.rootTs
+                : m.thread.conversation === target.conversation.conversation,
+            )
+            return inTarget.slice(-limit).map((m) => ({ userId: m.userId, ts: m.message.ts, text: m.text }))
+          }),
+        ),
       requestApproval: ({ ownerUserId, proposalId, title, repo, why, brief }) =>
         Effect.gen(function* () {
           // The owner's DM, as Slack would open it.
@@ -100,7 +114,11 @@ export const FakeChannelLayer = Layer.effectContext(
       finishPlan: ({ plan, outcome, answer }) => record({ _tag: "finishPlan", plan, outcome, answer }),
     })
     const control = FakeChannelControl.of({
-      push: (event) => Queue.offer(inbox, event).pipe(Effect.asVoid),
+      push: (event) =>
+        (event._tag === "UserMessage" ? Ref.update(history, (all) => [...all, event]) : Effect.void).pipe(
+          Effect.andThen(Queue.offer(inbox, event)),
+          Effect.asVoid,
+        ),
       calls: Ref.get(calls),
     })
     return Context.make(Channel, channel).pipe(Context.add(FakeChannelControl, control))

@@ -16,10 +16,10 @@ When v0 is done, you can:
 
 1. DM atta or mention it in a channel, and get a reaction within a second.
 2. Ask a question, and get an answer in the thread from the router.
-3. Ask for code work on an allowed repository. The router starts a worker in its own worktree.
+3. Ask for code work on an allowed repository. The router proposes a worker, you approve it with one click, and it runs in its own worktree.
 4. Watch the worker in the thread as a Slack plan message. Each command, file edit or step is a task.
 5. Get the result in the same thread when the worker finishes.
-6. Reply in the thread while the worker runs. Your reply goes straight to that worker without the router.
+6. Reply in the thread while the worker runs, in a DM or by mentioning atta in a channel. Your reply goes straight to that worker without the router.
 7. Say "stop" in the thread, and the worker stops.
 8. Have scheduled prompts from the config file run as if you had sent them.
 9. Restart your Mac or atta, and find running work still tracked and reported.
@@ -127,16 +127,16 @@ atta's SQLite file is the source of truth. Pi Durable keeps only the router's co
 ### Flow of one message
 
 1. The Slack adapter receives your message and stores it as an event. It ignores duplicates by Slack event ID.
-2. The filter applies to Slack messages only: it keeps one if it comes from your Slack user ID, and drops and logs the rest. Events atta creates itself (scheduled prompts, worker reports, worker finished) are trusted by kind.
+2. The filter applies to Slack messages only. A request is your DM or your mention of atta; everything else is dropped and logged, except in watched channels, where it is batched as information (see [watched channels](watched-channels.md)). Events atta creates itself (scheduled prompts, worker reports, worker finished) are trusted by kind.
 3. Core adds a 👀 reaction straight away, without waiting for a model.
 4. Dispatch routes by event kind:
-   - your message saying only "stop" stops the thread's workers, without the router
-   - your other messages go to the thread's subscribed worker: as a steer while it runs, as a new run while it is idle. With no worker, or more than one, they go to the router
+   - your message saying only "stop" stops the thread's workers, without the router, with or without a mention
+   - your other requests go to the thread's subscribed worker: as a steer while it runs, as a new run while it is idle. With no worker, or more than one, they go to the router
    - scheduled prompts, worker reports and "worker finished" always go to the router
 5. The router gets the event as one input. It answers with tools:
    - `reply` posts in the thread and ends the router's run, which saves the closing model turn the proof showed
-   - `start_worker` launches a worker and subscribes it to the thread
-6. The worker manager launches the worker through the T3 adapter, and posts the plan message in the thread.
+   - `start_worker` proposes a worker: you get a DM with its title, reason and whole brief, and Start and Skip buttons
+6. On Start, the worker manager launches the worker through the T3 adapter, and posts the plan message in the thread. The router hears the decision as an event.
 7. The worker tracker reads the worker's steps from T3 by position. It updates the plan message at most once a second.
 8. When the run ends, the tracker stores a "worker finished" event with the worker's final message. Dispatch sends it to the router.
 9. The router replies in the thread with the result.
@@ -158,17 +158,20 @@ At startup, atta finishes what a crash cut short:
 
 ### The router
 
-The router is a long-lived Pi Durable conversation, with automatic compaction. Events arrive as inputs. New events queue while it works, and a later event about the same thread can steer it.
+The router is a long-lived Pi Durable conversation, with automatic compaction. Events arrive as inputs, and new events queue while it works. Watched-channel messages arrive in batches, each batch its own input.
+
+The router only reads and decides, but two tools reach a worker's shell: the brief of `start_worker`, and `message_worker`. So every worker start needs your click, and in a turn a channel batch started, every acting tool except `start_worker` refuses. Each tool call carries the newest input the model had read, which tells core what started the turn.
 
 Its tools are written once in core as Effect programs. The Pi Durable adapter wraps each one in a Pi tool that runs the program:
 
 | Tool                                 | Does                                    | Safe to repeat after a crash                                                                   |
 | ------------------------------------ | --------------------------------------- | ---------------------------------------------------------------------------------------------- |
 | `reply(thread, text)`                | posts in the thread and ends the run    | yes: the store records each reply before posting it, and a replay skips a reply already posted |
-| `start_worker(repo, title, brief)`   | launches and subscribes a worker        | no, a second launch would duplicate it                                                         |
+| `start_worker(repo, title, brief)`   | proposes a worker for your approval     | yes: the proposal's ID comes from the call ID, so a replay sends one request                   |
 | `message_worker(worker, text, mode)` | steers or queues a message for a worker | no                                                                                             |
 | `stop_worker(worker)`                | stops a worker                          | yes                                                                                            |
 | `subscribe(thread, worker)`          | links another thread to a worker        | yes                                                                                            |
+| `read_conversation(from, limit)`     | reads a thread or a channel's latest    | yes                                                                                            |
 | `recall(query)`                      | asks memory and state for context       | yes                                                                                            |
 
 The prompt states the rules the proof showed we need:
@@ -310,7 +313,7 @@ The end-to-end checks run against real Slack, T3 and models. v0 is done when all
 | 2   | Someone else messages atta                    | nothing happens except a log line                                                                                   |
 | 3   | You ask a question                            | 👀 within 1 second, a reply in the thread                                                                           |
 | 4   | You ask for a fix on `sandbox-repo`           | the worker runs in its own worktree, on its own branch. The plan shows its steps, the result arrives, 👀 becomes ✅ |
-| 5   | You reply in the thread while the worker runs | the worker gets it as a steer. The router does not run                                                              |
+| 5   | You reply in the thread while the worker runs | in a DM, or with a mention in a channel, the worker gets it as a steer. The router does not run                     |
 | 6   | You say "stop"                                | the worker stops, and the plan shows it stopped                                                                     |
 | 7   | `kill -9` atta while a worker runs            | after restart, the plan carries on from the last step and the result still arrives                                  |
 | 8   | Restart T3 while a worker runs                | the plan marks the task as failed, and the thread says the run was interrupted                                      |

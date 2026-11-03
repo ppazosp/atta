@@ -61,7 +61,9 @@ export class Intake extends Context.Service<
             yield* store.deliveries.record(event.id, "observe", at)
             break
           case "Decide":
+            // Core starts the work; then the router hears what came of its proposal, so it remembers.
             yield* store.deliveries.record(event.id, "core", at)
+            yield* store.deliveries.record(event.id, "router", at)
             break
           case "ToWorker":
             yield* store.deliveries.record(event.id, `worker:${decided.workerId}`, at)
