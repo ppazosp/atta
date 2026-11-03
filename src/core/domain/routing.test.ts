@@ -152,8 +152,9 @@ describe("route", () => {
       expect(route(inChannel("use rm -rf", "U-OTHER", "mention"), working)._tag).toBe("Drop")
     })
 
-    it("stops the thread's workers on the user's 'stop', with or without a mention", () => {
-      expect(route(inChannel("stop", "U-TRUSTED", "thread_reply"), working)._tag).toBe("StopWorkers")
+    it("stops the thread's workers only on the user's mentioned 'stop'", () => {
+      expect(route(inChannel("stop", "U-TRUSTED", "mention"), working)._tag).toBe("StopWorkers")
+      expect(route(inChannel("stop", "U-TRUSTED", "thread_reply"), working)._tag).toBe("Drop")
       expect(route(inChannel("stop", "U-OTHER", "thread_reply"), working)._tag).toBe("Drop")
     })
   })

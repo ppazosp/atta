@@ -54,7 +54,8 @@ export const isStopCommand = (text: string) =>
  * - in a thread atta is part of, only the user's mentions (and "stop") reach atta; anything else waits until the
  *   user asks atta to read the thread
  * - elsewhere in a watched channel, every other message is information for the next channel turn
- * - "stop" stops the thread's running workers without the router
+ * - the user's "stop", in a DM or with a mention, stops the thread's running workers without the router. In a
+ *   channel, an untagged "stop" is just talk, so a stray one cannot end work
  * - a request goes to the thread's worker when it is the only subscriber and is running or idle; otherwise to the
  *   router
  * - scheduled prompts, worker reports and finished runs always go to the router
@@ -66,10 +67,6 @@ export const route = (event: Event, context: RoutingContext): Route => {
       const running = context.subscribers.filter((s) => s.state === "running")
       const request = trusted && (event.via === "dm" || event.via === "mention")
       if (!request) {
-        // "stop" needs no mention: stopping is always safe, and it should work however the user types it.
-        if (trusted && context.threadKnown && running.length > 0 && isStopCommand(event.text)) {
-          return Route.cases.StopWorkers.make({ workerIds: running.map((s) => s.workerId) })
-        }
         if (context.threadKnown) {
           return Route.cases.Drop.make({ reason: trusted ? "not_for_atta" : "untrusted_sender" })
         }
