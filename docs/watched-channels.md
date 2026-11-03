@@ -13,7 +13,7 @@ Also:
 
 - in a direct message, everything you write is a request
 - in a channel atta is in but does not watch, only your mentions count
-- "stop" from you stops a thread's running workers, with or without a mention
+- "stop" from you stops a thread's running workers. In a channel it needs a mention, so a stray "stop" in conversation does not end work
 - to bring a thread's other messages in, mention atta ("look at this"): the router reads the thread with `read_conversation`
 
 ## How it works

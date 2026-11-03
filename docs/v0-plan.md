@@ -20,7 +20,7 @@ When v0 is done, you can:
 4. Watch the worker in the thread as a Slack plan message. Each command, file edit or step is a task.
 5. Get the result in the same thread when the worker finishes.
 6. Reply in the thread while the worker runs, in a DM or by mentioning atta in a channel. Your reply goes straight to that worker without the router.
-7. Say "stop" in the thread, and the worker stops.
+7. Say "stop" in the thread (with a mention in a channel), and the worker stops.
 8. Have scheduled prompts from the config file run as if you had sent them.
 9. Restart your Mac or atta, and find running work still tracked and reported.
 
@@ -130,7 +130,7 @@ atta's SQLite file is the source of truth. Pi Durable keeps only the router's co
 2. The filter applies to Slack messages only. A request is your DM or your mention of atta; everything else is dropped and logged, except in watched channels, where it is batched as information (see [watched channels](watched-channels.md)). Events atta creates itself (scheduled prompts, worker reports, worker finished) are trusted by kind.
 3. Core adds a 👀 reaction straight away, without waiting for a model.
 4. Dispatch routes by event kind:
-   - your message saying only "stop" stops the thread's workers, without the router, with or without a mention
+   - your message saying only "stop" stops the thread's workers, without the router. In a channel it needs a mention, like any request, so a stray "stop" does not end work
    - your other requests go to the thread's subscribed worker: as a steer while it runs, as a new run while it is idle. With no worker, or more than one, they go to the router
    - scheduled prompts, worker reports and "worker finished" always go to the router
 5. The router gets the event as one input. It answers with tools:
