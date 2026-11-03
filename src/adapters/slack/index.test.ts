@@ -107,6 +107,56 @@ describe("Slack Channel", () => {
     }).pipe(Effect.provide(fake.layer))
   })
 
+  it.effect("reads a thread's newest messages across pages, oldest first, and names no user for bots", () => {
+    const fake = makeFakeSlack()
+    fake.responses.replies = async () =>
+      fake.calls.replies.length === 1
+        ? {
+            ok: true,
+            messages: [
+              { ts: "1", user: "U-ROOT", text: "root" },
+              { ts: "2", user: "U-A", text: "a" },
+            ],
+            response_metadata: { next_cursor: "next-page" },
+          }
+        : {
+            ok: true,
+            messages: [
+              { ts: "3", user: "UBOT", bot_id: "B1", text: "from atta" },
+              { ts: "4", user: "U-B" },
+            ],
+          }
+    return Effect.gen(function* () {
+      const channel = yield* Channel
+      expect(yield* channel.readConversation({ target: { thread }, limit: 3 })).toEqual([
+        { userId: "U-A", ts: "2", text: "a" },
+        { userId: null, ts: "3", text: "from atta" },
+        { userId: "U-B", ts: "4", text: "" },
+      ])
+      expect(fake.calls.replies[1]).toMatchObject({ cursor: "next-page", ts: thread.rootTs })
+    }).pipe(Effect.provide(fake.layer))
+  })
+
+  it.effect("reads a channel's latest messages oldest first", () => {
+    const fake = makeFakeSlack()
+    fake.responses.history = async () => ({
+      ok: true,
+      messages: [
+        { ts: "2", user: "U-A", text: "newer" },
+        { ts: "1", user: "U-B", text: "older" },
+      ],
+    })
+    return Effect.gen(function* () {
+      const channel = yield* Channel
+      const target = { conversation: { team: thread.team, conversation: thread.conversation } }
+      expect((yield* channel.readConversation({ target, limit: 2 })).map((m) => m.text)).toEqual([
+        "older",
+        "newer",
+      ])
+      expect(fake.calls.history[0]).toMatchObject({ channel: thread.conversation, limit: 2 })
+    }).pipe(Effect.provide(fake.layer))
+  })
+
   it.effect("ignores a tagged message that atta did not post", () => {
     const fake = makeFakeSlack()
     fake.responses.replies = async () => ({

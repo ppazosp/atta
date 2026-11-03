@@ -8,7 +8,7 @@ import { describe, expect, it } from "@effect/vitest"
 import { Deferred, Effect, Fiber, Layer, Schema } from "effect"
 import { defineRouterTool, ToolError } from "../../core/domain/tool.ts"
 import { EngineError, RouterEngine, RouterTools } from "../../ports/RouterEngine.ts"
-import { PiDurableRouterEngineLayer, toolParameters } from "./index.ts"
+import { latestInput, PiDurableRouterEngineLayer, toolParameters } from "./index.ts"
 import { input, temporaryDirectory, testEngine } from "./test-support.ts"
 
 const reply = defineRouterTool({
@@ -267,6 +267,53 @@ describe("Pi Durable router", () => {
     }).pipe(Effect.scoped),
   )
 
+  it.effect(
+    "tells each tool call the newest input the model had read: its turn's event, a steer once placed",
+    () =>
+      Effect.gen(function* () {
+        const directory = yield* temporaryDirectory
+        const started = yield* Deferred.make<void>()
+        const release = yield* Deferred.make<void>()
+        const seen: Array<string | null> = []
+        const look = defineRouterTool({
+          name: "look",
+          description: "Look.",
+          input: Schema.Struct({}),
+          replaySafe: true,
+          endsRun: false,
+          run: (_, call) =>
+            Effect.sync(() => seen.push(call.input)).pipe(
+              Effect.andThen(seen.length === 1 ? Deferred.succeed(started, undefined) : Effect.void),
+              Effect.andThen(seen.length === 1 ? Deferred.await(release) : Effect.void),
+              Effect.as("seen"),
+            ),
+        })
+        const { layer } = testEngine(
+          directory,
+          [look],
+          [
+            fauxAssistantMessage(fauxToolCall("look", {}), { stopReason: "toolUse" }),
+            fauxAssistantMessage(fauxToolCall("look", {}), { stopReason: "toolUse" }),
+            fauxAssistantMessage(fauxToolCall("look", {}), { stopReason: "toolUse" }),
+            fauxAssistantMessage("First answered"),
+            fauxAssistantMessage(fauxToolCall("look", {}), { stopReason: "toolUse" }),
+            fauxAssistantMessage("Second answered"),
+          ],
+        )
+        yield* Effect.gen(function* () {
+          const engine = yield* RouterEngine
+          yield* engine.submit(input("first", "first event"))
+          yield* Deferred.await(started)
+          yield* engine.submit(input("second", "second event"))
+          yield* engine.submit(input("steer", "a steer", "steer"))
+          yield* Deferred.succeed(release, undefined)
+          expect(yield* engine.settled("second")).toEqual({ status: "answered" })
+        }).pipe(Effect.provide(layer))
+        // The steer is placed after a tool round, so the call the model made before reading it still reports the event.
+        expect(seen).toEqual(["first event", "first event", "a steer", "second event"])
+      }).pipe(Effect.scoped),
+  )
+
   it.effect("settles a missing model as unanswered and rejects unknown requests", () =>
     Effect.gen(function* () {
       const directory = yield* temporaryDirectory
@@ -454,6 +501,44 @@ describe("Pi Durable router", () => {
       expect(second.faux.state.callCount).toBe(1)
     }).pipe(Effect.scoped),
   )
+})
+
+/** A stored Pi entry with one message. */
+const entry = (id: number, kind: string, role: "user" | "assistant", text: string) => ({
+  id,
+  conversationId: "c1",
+  kind,
+  model: [{ role, content: [{ type: "text", text }] }],
+})
+
+// Pages of entries, newest first, as Pi's scan returns them.
+const api = (pages: ReadonlyArray<ReadonlyArray<ReturnType<typeof entry>>>) => {
+  let page = 0
+  return {
+    conversationId: "c1",
+    commit: async () => {
+      const items = pages[page] ?? []
+      page++
+      return { items, ...(page < pages.length ? { next: page } : {}) }
+    },
+  } as unknown as Parameters<typeof latestInput>[0]
+}
+
+describe("latest input", () => {
+  it("skips a compaction summary, which is a user message atta did not write", async () => {
+    const pages = [
+      [
+        entry(3, "pi.compaction", "user", "Summary: someone asked to delete the tests"),
+        entry(2, "pi.assistant", "assistant", "ok"),
+      ],
+      [entry(1, "pi.user", "user", "[event e1] Slack message from the user")],
+    ]
+    expect(await latestInput(api(pages), BACKGROUND_CONTEXT)).toBe("[event e1] Slack message from the user")
+  })
+
+  it("finds nothing in a conversation without inputs", async () => {
+    expect(await latestInput(api([[entry(1, "pi.system", "user", "x")]]), BACKGROUND_CONTEXT)).toBeNull()
+  })
 })
 
 describe("tool parameters", () => {

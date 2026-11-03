@@ -31,10 +31,18 @@ const Messages = Schema.Struct({
     Schema.Struct({
       ts: Schema.NonEmptyString,
       user: Schema.optionalKey(Schema.String),
+      bot_id: Schema.optionalKey(Schema.Unknown),
+      text: Schema.optionalKey(Schema.String),
       metadata: Schema.optionalKey(Schema.Unknown),
     }),
   ),
   response_metadata: Schema.optionalKey(Schema.Struct({ next_cursor: Schema.optionalKey(Schema.String) })),
+})
+/** A message read back from Slack; bots, atta included, have no user to name. */
+const read = (message: (typeof Messages.Type)["messages"][number]) => ({
+  userId: message.bot_id === undefined && message.user !== undefined ? message.user : null,
+  ts: message.ts,
+  text: message.text ?? "",
 })
 const OperationMetadata = Schema.Struct({
   event_type: Schema.Literal("atta_operation"),
@@ -143,6 +151,39 @@ export const SlackChannelLayer = (
       })
       const approvals = makeApprovalWriter(client, findReply)
 
+      const readConversation: Channel["Service"]["readConversation"] = Effect.fn("Slack.readConversation")(
+        function* ({ target, limit }) {
+          if (!("thread" in target)) {
+            // History comes newest first, so one page holds the latest messages.
+            const result = yield* call(
+              "conversations.history",
+              () => client.conversations.history({ channel: target.conversation.conversation, limit }),
+              Messages,
+            )
+            return result.messages.map(read).toReversed()
+          }
+          // Replies come oldest first, so keep paging and hold on to the newest `limit`.
+          let kept: Array<ReturnType<typeof read>> = []
+          let cursor: string | undefined
+          do {
+            const result = yield* call(
+              "conversations.replies",
+              () =>
+                client.conversations.replies({
+                  channel: target.thread.conversation,
+                  ts: target.thread.rootTs,
+                  limit: 200,
+                  ...(cursor ? { cursor } : {}),
+                }),
+              Messages,
+            )
+            kept = [...kept, ...result.messages.map(read)].slice(-limit)
+            cursor = result.response_metadata?.next_cursor?.trim()
+          } while (cursor)
+          return kept
+        },
+      )
+
       return Channel.of({
         events: Stream.fromQueue(inbox).pipe(
           // A payload atta cannot read is logged and skipped; it must not stop every later event.
@@ -182,6 +223,7 @@ export const SlackChannelLayer = (
           return { team: where.team, conversation: where.conversation, ts: result.ts }
         }),
         findReply,
+        readConversation,
         react: Effect.fn("Slack.react")((message, emoji) =>
           call(
             "reactions.add",

@@ -7,9 +7,12 @@ import type { WorkerState } from "./worker.ts"
 export const Route = Schema.TaggedUnion({
   Drop: { reason: Schema.Literals(["untrusted_sender", "unknown_thread", "not_for_atta"]) },
   ToRouter: {},
-  /** A message in a watched channel: the router may propose work, but nothing is posted and no reactions. */
+  /**
+   * A message in a watched channel that is information, not a request: from anyone, or from the user without a
+   * mention. It waits for the next channel turn, where the router can only propose work.
+   */
   Observe: {},
-  /** The trusted user decided on a proposal: core starts the work or drops it, without the router. */
+  /** The trusted user decided on a proposal: core starts the work or drops it, then tells the router. */
   Decide: {},
   /** Stored for reference only (a proposal). */
   Record: {},
@@ -45,35 +48,40 @@ export const isStopCommand = (text: string) =>
     .replace(/[.!]+$/, "") === "stop"
 
 /**
- * The routing rules from docs/v0-plan.md, "Flow of one message":
+ * The routing rules from docs/v0-plan.md, "Flow of one message", and docs/watched-channels.md:
  * - only Slack messages are filtered by sender; events atta creates itself are trusted by kind
- * - a thread reply counts only in a thread atta is already part of
+ * - the user talks to atta in a DM or with a mention. In a channel, nothing else is a request
+ * - in a thread atta is part of, only the user's mentions (and "stop") reach atta; anything else waits until the
+ *   user asks atta to read the thread
+ * - elsewhere in a watched channel, every other message is information for the next channel turn
  * - "stop" stops the thread's running workers without the router
- * - other messages go to the thread's worker when it is the only subscriber and is running or idle; otherwise to
- *   the router
+ * - a request goes to the thread's worker when it is the only subscriber and is running or idle; otherwise to the
+ *   router
  * - scheduled prompts, worker reports and finished runs always go to the router
  */
 export const route = (event: Event, context: RoutingContext): Route => {
   switch (event._tag) {
     case "UserMessage": {
       const trusted = event.userId === context.trustedUserId
-      // Someone else's message only matters in a watched channel, and only as something to observe.
-      if (!trusted) {
-        return context.watched
-          ? Route.cases.Observe.make({})
-          : Route.cases.Drop.make({ reason: "untrusted_sender" })
-      }
-      if (event.via === "channel") {
-        return context.watched
-          ? Route.cases.Observe.make({})
-          : Route.cases.Drop.make({ reason: "not_for_atta" })
-      }
-      if (event.via === "thread_reply" && !context.threadKnown) {
-        return context.watched
-          ? Route.cases.Observe.make({})
-          : Route.cases.Drop.make({ reason: "unknown_thread" })
-      }
       const running = context.subscribers.filter((s) => s.state === "running")
+      const request = trusted && (event.via === "dm" || event.via === "mention")
+      if (!request) {
+        // "stop" needs no mention: stopping is always safe, and it should work however the user types it.
+        if (trusted && context.threadKnown && running.length > 0 && isStopCommand(event.text)) {
+          return Route.cases.StopWorkers.make({ workerIds: running.map((s) => s.workerId) })
+        }
+        if (context.threadKnown) {
+          return Route.cases.Drop.make({ reason: trusted ? "not_for_atta" : "untrusted_sender" })
+        }
+        if (context.watched) return Route.cases.Observe.make({})
+        return Route.cases.Drop.make({
+          reason: !trusted
+            ? "untrusted_sender"
+            : event.via === "thread_reply"
+              ? "unknown_thread"
+              : "not_for_atta",
+        })
+      }
       if (isStopCommand(event.text)) {
         return running.length > 0
           ? Route.cases.StopWorkers.make({ workerIds: running.map((s) => s.workerId) })

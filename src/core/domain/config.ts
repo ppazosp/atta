@@ -58,8 +58,8 @@ export const AttaConfig = Schema.Struct({
   }),
   schedules: Schema.Array(ScheduleConfig),
   /**
-   * Channels atta reads in full (conversation IDs). Every message there reaches the router as an observation;
-   * atta never posts in them without the trusted user's approval.
+   * Channels atta reads in full (conversation IDs). Messages there that are not the user's mention reach the
+   * router in batches, as information it can only propose work on; atta never posts in them without approval.
    */
   watchedChannels: Schema.optionalKey(Schema.Array(Schema.NonEmptyString)),
   /** Where atta keeps its database, router storage and logs. */

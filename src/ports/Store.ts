@@ -22,8 +22,8 @@ export interface Transition {
 }
 
 /**
- * Where an event was sent: the router, the router as an observation (a watched channel), core itself (an
- * approval decision), or a worker directly (pass-through, `worker:<id>`).
+ * Where an event was sent: the router, the router in a batch of watched-channel messages (`observe`), core itself
+ * (an approval decision), or a worker directly (pass-through, `worker:<id>`).
  */
 export type DeliveryTarget = "router" | "observe" | "core" | `worker:${string}`
 
