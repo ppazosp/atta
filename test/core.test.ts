@@ -262,6 +262,28 @@ describe("core flow", () => {
         ["Read calc.py", "complete"],
         ["Add div()", "in_progress"],
       ])
+      // The worker edits its plan in place: a step reworded, one added, not started yet. The message follows exactly.
+      yield* runtime.putSteps(runtimeRef, [
+        step("plan#1", 2, "plan_step", "Read calc.py", "complete"),
+        step("plan#2", 2, "plan_step", "Add div() with a zero check", "in_progress"),
+        step("plan#3", 2, "plan_step", "Run the tests", "pending"),
+      ])
+      yield* (yield* Tracker).poll(workerId)
+      expect((yield* channelCalls("upsertPlan")).at(-1)?.tasks.map((t) => [t.title, t.status])).toEqual([
+        ["Read calc.py", "complete"],
+        ["Add div() with a zero check", "in_progress"],
+        ["Run the tests", "pending"],
+      ])
+      // A step dropped from the plan leaves the message too.
+      yield* runtime.putSteps(runtimeRef, [
+        step("plan#1", 2, "plan_step", "Read calc.py", "complete"),
+        step("plan#2", 2, "plan_step", "Add div() with a zero check", "in_progress"),
+      ])
+      yield* (yield* Tracker).poll(workerId)
+      expect((yield* channelCalls("upsertPlan")).at(-1)?.tasks.map((t) => t.title)).toEqual([
+        "Read calc.py",
+        "Add div() with a zero check",
+      ])
     }).pipe(Effect.provide(harness)),
   )
 
