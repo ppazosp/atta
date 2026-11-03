@@ -3,11 +3,12 @@ import { homedir, tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "@effect/vitest"
-import { ConfigProvider, Effect, Redacted } from "effect"
+import { ConfigProvider, Effect, Layer, Redacted, Schema } from "effect"
 import { vi } from "vitest"
 import example from "../../atta.config.example.ts"
-import { Settings } from "../core/Settings.ts"
-import { ConfigLoadError, SettingsLayer, SlackTokens } from "./config.ts"
+import { AttaConfig } from "../core/domain/config.ts"
+import { RepoGuides, Settings } from "../core/Settings.ts"
+import { ConfigLoadError, RepoGuidesLayer, SettingsLayer, SlackTokens } from "./config.ts"
 
 const examplePath = fileURLToPath(new URL("../../atta.config.example.ts", import.meta.url))
 const environment = {
@@ -139,6 +140,32 @@ describe("SettingsLayer", () => {
       expect(error.message).toContain(name)
       expect(error.message).not.toContain(environment.SLACK_BOT_TOKEN)
       expect(error.message).not.toContain(environment.SLACK_APP_TOKEN)
+    }),
+  )
+})
+
+describe("RepoGuidesLayer", () => {
+  it.effect("reads each repository's AGENTS.md, cuts a long one, and skips a repository without one", () =>
+    Effect.gen(function* () {
+      const root = yield* Effect.acquireRelease(
+        Effect.tryPromise(() => mkdtemp(join(tmpdir(), "atta-guides-"))),
+        (path) => Effect.promise(() => rm(path, { recursive: true, force: true })),
+      )
+      yield* Effect.tryPromise(() => writeFile(join(root, "AGENTS.md"), "x".repeat(40_001)))
+      const decoded = Schema.decodeUnknownSync(AttaConfig)(example)
+      const repo = decoded.repos[0]!
+      const settings = {
+        ...decoded,
+        repos: [
+          { ...repo, name: "with-guide", path: root },
+          { ...repo, name: "without", path: join(root, "missing") },
+        ],
+      }
+      const guides = yield* RepoGuides.pipe(
+        Effect.provide(RepoGuidesLayer.pipe(Layer.provide(Layer.succeed(Settings)(settings)))),
+      )
+      expect([...guides.keys()]).toEqual(["with-guide"])
+      expect(guides.get("with-guide")).toMatch(/^x{40000}\n\n\(cut at 40000 characters\)$/)
     }),
   )
 })
