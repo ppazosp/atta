@@ -20,6 +20,7 @@ class McpServerError extends Schema.TaggedError<McpServerError>()("McpServerErro
 
 const AskInput = Schema.Struct({ worker_id: WorkerId, question: Schema.NonEmptyString })
 const ReportInput = Schema.Struct({ worker_id: WorkerId, text: Schema.NonEmptyString })
+const SayInput = ReportInput
 
 const tools: Array<Tool> = [
   {
@@ -50,7 +51,24 @@ const tools: Array<Tool> = [
     },
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
   },
+  {
+    name: "say",
+    description:
+      "Post a short message to the user in your Slack thread, for example to answer their message.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        worker_id: { type: "string", minLength: 1 },
+        text: { type: "string", minLength: 1 },
+      },
+      required: ["worker_id", "text"],
+      additionalProperties: false,
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
+  },
 ]
+
+const toolNames = new Set(tools.map((tool) => tool.name))
 
 const textResult = (text: string, isError = false): CallToolResult => ({
   content: [{ type: "text", text }],
@@ -70,6 +88,11 @@ export const McpServerLayer = Layer.effectDiscard(
         if (name === "ask") {
           const args = yield* Schema.decodeUnknownEffect(AskInput)(input, { onExcessProperty: "error" })
           return textResult(yield* api.ask({ workerId: args.worker_id, question: args.question }))
+        }
+        if (name === "say") {
+          const args = yield* Schema.decodeUnknownEffect(SayInput)(input, { onExcessProperty: "error" })
+          yield* api.say({ workerId: args.worker_id, text: args.text })
+          return textResult("Posted in your thread.")
         }
         const args = yield* Schema.decodeUnknownEffect(ReportInput)(input, { onExcessProperty: "error" })
         yield* api.report({ workerId: args.worker_id, text: args.text })
@@ -105,7 +128,7 @@ export const McpServerLayer = Layer.effectDiscard(
           })
           server.setRequestHandler(ListToolsRequestSchema, () => ({ tools }))
           server.setRequestHandler(CallToolRequestSchema, (call, { signal }) => {
-            if (call.params.name !== "ask" && call.params.name !== "report") {
+            if (!toolNames.has(call.params.name)) {
               throw new McpError(ErrorCode.InvalidParams, `Unknown tool: ${call.params.name}`)
             }
             return runTool(callTool(call.params.name, call.params.arguments), { signal })

@@ -10,7 +10,7 @@ import { Outbox, Results } from "./Outbox.ts"
 import { now } from "./clock.ts"
 import { renderChannelBatch, renderEvent } from "./render.ts"
 import { Settings } from "./Settings.ts"
-import { Workers } from "./Workers.ts"
+import { USER_MESSAGE, Workers } from "./Workers.ts"
 
 /** The outbox operation that sends the approval request for a proposal. */
 export const approvalOp = (proposalId: EventId) => OperationId.make(`approval:${proposalId}`)
@@ -214,7 +214,7 @@ export class Dispatch extends Context.Service<
           ? workers.stop({ workerId, operationId: OperationId.make(`stop:${event.id}:${workerId}`) })
           : workers.message({
               workerId,
-              text: event.text,
+              text: `${USER_MESSAGE}\n\n${event.text}`,
               operationId: OperationId.make(`send:${event.id}:${workerId}`),
             })
         yield* handled.pipe(

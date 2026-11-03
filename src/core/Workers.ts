@@ -16,6 +16,9 @@ export class WorkerUnavailable extends Schema.TaggedError<WorkerUnavailable>()("
   message: Schema.String,
 }) {}
 
+/** How a user's message to a worker begins, so the worker knows who wrote it and answers with `say`. */
+export const USER_MESSAGE = "The user wrote in your Slack thread:"
+
 /** Appended to every brief. The rules here come from the proofs (a worker followed "use main" and committed there). */
 const briefFooter = (workerId: WorkerId) =>
   [
@@ -28,6 +31,9 @@ const briefFooter = (workerId: WorkerId) =>
     `- When you need context you do not have, call atta.ask with worker_id "${workerId}".`,
     `- If you are blocked and need a decision, call atta.report with worker_id "${workerId}" and say what you need.`,
     "  Do not report when you finish: atta sees that by itself.",
+    `- The user can message you while you work. Their message starts with "${USER_MESSAGE}". Answer it with`,
+    `  atta.say (worker_id "${workerId}") in a sentence or two, then carry on, following what they said. Use say only`,
+    "  to talk to the user: your plan already shows your progress, and atta posts your final answer.",
     "- Work on the branch created for you. Do not switch branches and do not commit to main.",
   ].join("\n")
 

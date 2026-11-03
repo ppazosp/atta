@@ -108,7 +108,7 @@ Each interface is an Effect service. WP0 writes them as code; the lists below sa
   - `recall(query)`
   - `remember(fact)`, which does nothing in v0
 - Store: one repository per table, and `transaction(effect)` so a group of writes lands together or not at all.
-- WorkerApi (used by atta's MCP server): `ask(workerId, question)` and `report(workerId, text)`. Core implements it; WP7 exposes it.
+- WorkerApi (used by atta's MCP server): `ask(workerId, question)`, `report(workerId, text)` and `say(workerId, text)`. Core implements it; WP7 exposes it.
 
 ### Stored data
 
@@ -192,17 +192,19 @@ Each brief ends with a fixed footer:
 
 - your worker ID
 - use `atta.ask` when you need context
-- call `atta.report` when you finish or get blocked
+- call `atta.report` when you are blocked and need a decision (atta sees by itself when you finish)
+- your messages start with "The user wrote in your Slack thread:"; answer each one briefly with `atta.say`, then carry on
 - work on the branch T3 created for you, and do not switch branches
 
 When a worker finishes, the tracker checks which branch it committed to. If it is not the worker's own branch, the tracker flags it in the thread.
 
 ### atta's MCP server
 
-It listens on `127.0.0.1` only. Workers can call two tools:
+It listens on `127.0.0.1` only. Workers can call three tools:
 
 - `ask(worker_id, question)` is answered from state and, later, memory. It is read-only
 - `report(worker_id, text)` becomes an event for the router
+- `say(worker_id, text)` posts a short message (up to 3,000 characters) in the worker's own thread. It is how a worker answers you while it works, so you can steer it. It cannot post anywhere else
 
 v0 trusts the worker ID that the brief gives each worker. Real per-caller authentication comes when other agents use the server.
 
@@ -309,20 +311,20 @@ Each milestone has unit tests that run core against fake adapters. Effect's test
 
 The end-to-end checks run against real Slack, T3 and models. v0 is done when all of these pass on your Mac:
 
-| #   | Scenario                                      | Passes when                                                                                                         |
-| --- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| 1   | Slack sends the same event twice              | one event row, one router input                                                                                     |
-| 2   | Someone else messages atta                    | nothing happens except a log line                                                                                   |
-| 3   | You ask a question                            | 👀 within 1 second, a reply in the thread                                                                           |
-| 4   | You ask for a fix on `sandbox-repo`           | the worker runs in its own worktree, on its own branch. The plan shows its steps, the result arrives, 👀 becomes ✅ |
-| 5   | You reply in the thread while the worker runs | in a DM, or with a mention in a channel, the worker gets it as a steer. The router does not run                     |
-| 6   | You say "stop"                                | the worker stops, and the plan shows it stopped                                                                     |
-| 7   | `kill -9` atta while a worker runs            | after restart, the plan carries on from the last step and the result still arrives                                  |
-| 8   | Restart T3 while a worker runs                | the plan marks the task as failed, and the thread says the run was interrupted                                      |
-| 9   | A worker runs longer than 10 minutes          | the plan message keeps updating, because it does not use a stream                                                   |
-| 10  | A scheduled prompt is due                     | it runs once, in its configured thread                                                                              |
-| 11  | A worker commits to `main`                    | the thread flags it                                                                                                 |
-| 12  | You mention atta in a channel                 | atta replies in a thread under your message, as it does in a DM                                                     |
+| #   | Scenario                                      | Passes when                                                                                                               |
+| --- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Slack sends the same event twice              | one event row, one router input                                                                                           |
+| 2   | Someone else messages atta                    | nothing happens except a log line                                                                                         |
+| 3   | You ask a question                            | 👀 within 1 second, a reply in the thread                                                                                 |
+| 4   | You ask for a fix on `sandbox-repo`           | the worker runs in its own worktree, on its own branch. The plan shows its steps, the result arrives, 👀 becomes ✅       |
+| 5   | You reply in the thread while the worker runs | in a DM, or with a mention in a channel, the worker gets it as a steer and answers in the thread. The router does not run |
+| 6   | You say "stop"                                | the worker stops, and the plan shows it stopped                                                                           |
+| 7   | `kill -9` atta while a worker runs            | after restart, the plan carries on from the last step and the result still arrives                                        |
+| 8   | Restart T3 while a worker runs                | the plan marks the task as failed, and the thread says the run was interrupted                                            |
+| 9   | A worker runs longer than 10 minutes          | the plan message keeps updating, because it does not use a stream                                                         |
+| 10  | A scheduled prompt is due                     | it runs once, in its configured thread                                                                                    |
+| 11  | A worker commits to `main`                    | the thread flags it                                                                                                       |
+| 12  | You mention atta in a channel                 | atta replies in a thread under your message, as it does in a DM                                                           |
 
 ## Risks
 

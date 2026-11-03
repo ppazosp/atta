@@ -4,6 +4,7 @@ import { WorkerApi, WorkerApiError } from "../../src/ports/WorkerApi.ts"
 export type WorkerApiCall =
   | { readonly _tag: "ask"; readonly workerId: string; readonly question: string }
   | { readonly _tag: "report"; readonly workerId: string; readonly text: string }
+  | { readonly _tag: "say"; readonly workerId: string; readonly text: string }
 
 /** Answers every question with `answer`, and records calls. Workers whose ID starts with `unknown` are rejected. */
 export class FakeWorkerApiControl extends Context.Service<
@@ -31,6 +32,10 @@ export const makeFakeWorkerApiLayer = (answer: string) =>
         report: ({ workerId, text }) =>
           check(workerId).pipe(
             Effect.andThen(Ref.update(calls, (all) => [...all, { _tag: "report" as const, workerId, text }])),
+          ),
+        say: ({ workerId, text }) =>
+          check(workerId).pipe(
+            Effect.andThen(Ref.update(calls, (all) => [...all, { _tag: "say" as const, workerId, text }])),
           ),
       })
       return Context.make(WorkerApi, api).pipe(

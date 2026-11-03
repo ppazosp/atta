@@ -4,7 +4,9 @@ import example from "../atta.config.example.ts"
 import { AttaConfig } from "../src/core/domain/config.ts"
 import type { Event } from "../src/core/domain/event.ts"
 import { EventId, OperationId, Timestamp, type RuntimeRef, type WorkerId } from "../src/core/domain/ids.ts"
-import { threadKey } from "../src/core/domain/thread.ts"
+import { parseThreadKey, threadKey } from "../src/core/domain/thread.ts"
+import { USER_MESSAGE } from "../src/core/Workers.ts"
+import { MAX_SAY } from "../src/core/WorkerApiLive.ts"
 import { Dispatch } from "../src/core/Dispatch.ts"
 import { Intake } from "../src/core/Intake.ts"
 import { Outbox } from "../src/core/Outbox.ts"
@@ -272,7 +274,7 @@ describe("core flow", () => {
       expect(routed).toMatchObject({ _tag: "ToWorker", mode: "steer" })
       expect((yield* router.submissions).length).toBe(before)
       const sends = (yield* (yield* FakeRuntimeControl).calls).filter((c) => c._tag === "send")
-      expect(sends).toMatchObject([{ mode: "steer", text: "Use pnpm, not npm" }])
+      expect(sends).toMatchObject([{ mode: "steer", text: `${USER_MESSAGE}\n\nUse pnpm, not npm` }])
     }).pipe(Effect.provide(harness)),
   )
 
@@ -428,6 +430,25 @@ describe("core flow", () => {
         .report({ workerId: "w-nope" as WorkerId, text: "x" })
         .pipe(Effect.flip)
       expect(unknown.reason).toBe("unknown_worker")
+    }).pipe(Effect.provide(harness)),
+  )
+
+  it.effect("lets a worker answer the user in its own thread", () =>
+    Effect.gen(function* () {
+      const api = yield* WorkerApi
+      const { workerId } = yield* startWorker
+      yield* api.say({ workerId, text: "Yes, I got it. Switching to pnpm." })
+      expect((yield* channelCalls("reply")).at(-1)).toMatchObject({
+        target: { thread: parseThreadKey(key) },
+        text: "Yes, I got it. Switching to pnpm.",
+      })
+      const unknown = yield* api.say({ workerId: "w-nope" as WorkerId, text: "x" }).pipe(Effect.flip)
+      expect(unknown.reason).toBe("unknown_worker")
+      const long = yield* api.say({ workerId, text: "x".repeat(MAX_SAY + 1) }).pipe(Effect.flip)
+      expect(long.message).toContain("short messages")
+      yield* take(slack("stop"))
+      const stopping = yield* api.say({ workerId, text: "Still here" }).pipe(Effect.flip)
+      expect(stopping.message).toContain("not running")
     }).pipe(Effect.provide(harness)),
   )
 
@@ -842,7 +863,9 @@ describe("watched channels", () => {
         expect((yield* say(posted("talking to Ana here", ME, "thread_reply")))?._tag).toBe("Drop")
         expect(yield* sends()).toEqual([])
         expect((yield* say(posted("use pnpm", ME, "mention")))?._tag).toBe("ToWorker")
-        expect((yield* sends()).map((c) => c._tag === "send" && c.text)).toEqual(["use pnpm"])
+        expect((yield* sends()).map((c) => c._tag === "send" && c.text)).toEqual([
+          `${USER_MESSAGE}\n\nuse pnpm`,
+        ])
 
         const read = yield* (yield* FakeRouterControl).callTool("read_conversation", { from: channelKey })
         expect(read).toContain("someone else (U-COLLEAGUE):")
