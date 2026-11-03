@@ -18,5 +18,7 @@ export class WorkerApi extends Context.Service<
     }): Effect.Effect<string, WorkerApiError>
     /** Becomes a `WorkerReport` event for the router. */
     report(input: { readonly workerId: WorkerId; readonly text: string }): Effect.Effect<void, WorkerApiError>
+    /** Posts `text` in the worker's own Slack thread, so it can answer the user while it works. */
+    say(input: { readonly workerId: WorkerId; readonly text: string }): Effect.Effect<void, WorkerApiError>
   }
 >()("atta/ports/WorkerApi") {}

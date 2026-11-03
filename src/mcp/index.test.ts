@@ -123,11 +123,11 @@ const httpRequest = Effect.fn("McpTest.httpRequest")(
 const fake = makeFakeWorkerApiLayer("Use the sandbox repository.")
 
 describe("worker MCP server", () => {
-  it.effect("lists exactly ask and report with their JSON Schema inputs", () =>
+  it.effect("lists exactly ask, report and say with their JSON Schema inputs", () =>
     Effect.gen(function* () {
       const client = yield* connect(yield* startServer())
       const listed = yield* Effect.tryPromise(() => client.listTools())
-      expect(listed.tools.map((tool) => tool.name)).toEqual(["ask", "report"])
+      expect(listed.tools.map((tool) => tool.name)).toEqual(["ask", "report", "say"])
       expect(listed.tools.map((tool) => tool.inputSchema)).toEqual([
         {
           type: "object",
@@ -144,11 +144,17 @@ describe("worker MCP server", () => {
           required: ["worker_id", "text"],
           additionalProperties: false,
         },
+        {
+          type: "object",
+          properties: { worker_id: { type: "string", minLength: 1 }, text: { type: "string", minLength: 1 } },
+          required: ["worker_id", "text"],
+          additionalProperties: false,
+        },
       ])
     }).pipe(Effect.scoped, Effect.provide(fake)),
   )
 
-  it.effect("passes ask and report to the fake WorkerApi and returns text", () =>
+  it.effect("passes ask, report and say to the fake WorkerApi and returns text", () =>
     Effect.gen(function* () {
       const client = yield* connect(yield* startServer())
       expect(yield* call(client, "ask", { worker_id: "worker-1", question: "Which repository?" })).toEqual({
@@ -157,9 +163,13 @@ describe("worker MCP server", () => {
       expect(yield* call(client, "report", { worker_id: "worker-1", text: "Finished the work." })).toEqual({
         content: [{ type: "text", text: "Report received." }],
       })
+      expect(yield* call(client, "say", { worker_id: "worker-1", text: "Yes, using pnpm now." })).toEqual({
+        content: [{ type: "text", text: "Posted in your thread." }],
+      })
       expect(yield* (yield* FakeWorkerApiControl).calls).toEqual([
         { _tag: "ask", workerId: "worker-1", question: "Which repository?" },
         { _tag: "report", workerId: "worker-1", text: "Finished the work." },
+        { _tag: "say", workerId: "worker-1", text: "Yes, using pnpm now." },
       ])
     }).pipe(Effect.scoped, Effect.provide(fake)),
   )
@@ -181,7 +191,7 @@ describe("worker MCP server", () => {
     }).pipe(Effect.scoped, Effect.provide(fake)),
   )
 
-  it.effect.each(["ask", "report"])("turns an unknown worker into a %s tool error", (name) =>
+  it.effect.each(["ask", "report", "say"])("turns an unknown worker into a %s tool error", (name) =>
     Effect.gen(function* () {
       const client = yield* connect(yield* startServer())
       const args = name === "ask" ? { question: "Context?" } : { text: "Done." }
@@ -196,7 +206,7 @@ describe("worker MCP server", () => {
   it.effect.each(["worker_retired", "failed"] as const)("preserves a %s WorkerApi error", (reason) =>
     Effect.gen(function* () {
       const client = yield* connect(yield* startServer())
-      for (const name of ["ask", "report"]) {
+      for (const name of ["ask", "report", "say"]) {
         const args = name === "ask" ? { question: "Context?" } : { text: "Done." }
         expect(yield* call(client, name, { worker_id: "worker-1", ...args })).toEqual({
           isError: true,
@@ -227,6 +237,13 @@ describe("worker MCP server", () => {
                 message: reason === "worker_retired" ? "worker-1 is retired" : "storage unavailable",
               }),
             ),
+          say: () =>
+            Effect.fail(
+              new WorkerApiError({
+                reason,
+                message: reason === "worker_retired" ? "worker-1 is retired" : "storage unavailable",
+              }),
+            ),
         }),
       ),
     ),
@@ -242,7 +259,7 @@ describe("worker MCP server", () => {
     { worker_id: "worker-1", text: false },
     { worker_id: "worker-1", question: "", text: "" },
   ]
-  for (const name of ["ask", "report"]) {
+  for (const name of ["ask", "report", "say"]) {
     it.effect.each(invalidInputs)(`rejects invalid ${name} input %# before calling WorkerApi`, (input) =>
       Effect.gen(function* () {
         const client = yield* connect(yield* startServer())
@@ -343,6 +360,7 @@ describe("worker MCP server", () => {
                 Effect.onInterrupt(() => Ref.set(interrupted, true)),
               ),
             report: () => Effect.void,
+            say: () => Effect.void,
           }),
         ),
       )
