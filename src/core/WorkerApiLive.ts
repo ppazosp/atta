@@ -77,6 +77,13 @@ export const WorkerApiLive = Layer.effect(
             })
           }
           const worker = yield* known(workerId)
+          // Only a worker in the middle of a run talks; a call for an idle or stopping one is not from its run.
+          if (worker.state !== "running") {
+            return yield* new WorkerApiError({
+              reason: "failed",
+              message: `${workerId} is ${worker.state}, not running`,
+            })
+          }
           const operationId = OperationId.make(`say:${workerId}:${crypto.randomUUID()}`)
           const target = { thread: parseThreadKey(worker.origin) }
           yield* store.transaction(outbox.enqueue(operationId, "slack_reply", { target, text })).pipe(

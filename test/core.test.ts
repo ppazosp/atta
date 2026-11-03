@@ -446,6 +446,9 @@ describe("core flow", () => {
       expect(unknown.reason).toBe("unknown_worker")
       const long = yield* api.say({ workerId, text: "x".repeat(MAX_SAY + 1) }).pipe(Effect.flip)
       expect(long.message).toContain("short messages")
+      yield* take(slack("stop"))
+      const stopping = yield* api.say({ workerId, text: "Still here" }).pipe(Effect.flip)
+      expect(stopping.message).toContain("not running")
     }).pipe(Effect.provide(harness)),
   )
 
