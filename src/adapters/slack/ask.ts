@@ -35,7 +35,8 @@ const Uploaded = Schema.Struct({
  * themselves. All measured in Slack on 4 November 2026.
  */
 export const askMarkdown = (text: string) => {
-  const safe = escapeMrkdwn(text).replaceAll("[", "\\[")
+  // Backslashes first, so a worker's own `\[` cannot cancel atta's escape.
+  const safe = escapeMrkdwn(text).replaceAll("\\", "\\\\").replaceAll("[", "\\[")
   return safe.length > MARKDOWN_LIMIT
     ? `${safe.slice(0, MARKDOWN_LIMIT - 40)}\n\n(cut at Slack's limit)`
     : safe

@@ -45,6 +45,7 @@ describe("Slack worker requests", () => {
     expect(askMarkdown("Hi <!channel> <@U01> & [docs](https://evil.example)")).toBe(
       "Hi &lt;!channel&gt; &lt;@U01&gt; &amp; \\[docs](https://evil.example)",
     )
+    expect(askMarkdown("\\[x](https://evil.example)")).toBe("\\\\\\[x](https://evil.example)")
     expect(askMarkdown("[click][r]\n\n[r]: https://evil.example")).toBe(
       "\\[click]\\[r]\n\n\\[r]: https://evil.example",
     )
