@@ -227,6 +227,7 @@ describe("T3 runtime", () => {
           page.items.filter((item) => item.runId === run.runId && item.type === "assistant_message").at(-1)
             ?.text ?? null,
         assignedBranch: page.thread.branch,
+        worktreePath: page.thread.worktreePath,
         currentBranch: null,
         headCommit: null,
       })

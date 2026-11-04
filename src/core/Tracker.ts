@@ -159,6 +159,9 @@ export class Tracker extends Context.Service<
           worker = yield* workers.update(worker.id, { stepPosition: view.position })
 
         const status = yield* runtime.status({ worker: worker.runtimeRef!, runId })
+        // The worktree exists only after launch; a worker's images for ask_approval must come from it.
+        if (status.worktreePath !== null && status.worktreePath !== worker.worktreePath)
+          worker = yield* workers.update(worker.id, { worktreePath: status.worktreePath })
         if (status.state !== "finished") return
         const eventId = yield* workers.finishRun(worker.id, {
           status,

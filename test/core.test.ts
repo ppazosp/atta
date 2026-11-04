@@ -532,6 +532,18 @@ describe("core flow", () => {
     }).pipe(Effect.provide(harness)),
   )
 
+  it.effect("learns a worker's worktree from the runtime once it exists, for the images it attaches", () =>
+    Effect.gen(function* () {
+      const store = yield* Store
+      const { workerId, runtimeRef } = yield* startWorker
+      expect(Option.getOrThrow(yield* store.workers.get(workerId)).worktreePath).toBeNull()
+      yield* (yield* Tracker).poll(workerId)
+      expect(Option.getOrThrow(yield* store.workers.get(workerId)).worktreePath).toBe(
+        `/worktrees/${runtimeRef}`,
+      )
+    }).pipe(Effect.provide(harness)),
+  )
+
   it.effect("passes the user's Approve to the worker and closes the request", () =>
     Effect.gen(function* () {
       const runtime = yield* FakeRuntimeControl
