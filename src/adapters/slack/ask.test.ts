@@ -1,4 +1,4 @@
-import { mkdtemp, writeFile } from "node:fs/promises"
+import { mkdtemp, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, it } from "@effect/vitest"
@@ -32,7 +32,10 @@ const buttons = {
 const image = (dir: string, name: string, bytes = 10) =>
   Effect.promise(async () => {
     const path = join(dir, name)
-    await writeFile(path, Buffer.alloc(bytes))
+    // A PNG signature, then padding: atta checks the content, not the name.
+    const png = Buffer.alloc(bytes)
+    png.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+    await writeFile(path, png)
     return path
   })
 const tempDir = Effect.promise(() => mkdtemp(join(tmpdir(), "atta-ask-")))
@@ -93,23 +96,33 @@ describe("Slack worker requests", () => {
     }).pipe(Effect.provide(fake.layer))
   })
 
-  it.effect("refuses an image over 5 MB or one it cannot read, before posting anything", () => {
-    const fake = makeFakeSlack()
-    return Effect.gen(function* () {
-      const dir = yield* tempDir
-      const big = yield* image(dir, "big.png", 5 * 1024 * 1024 + 1)
-      const channel = yield* Channel
-      expect((yield* channel.askApproval(request([big])).pipe(Effect.flip)).message).toBe(
-        "big.png is over 5 MB",
-      )
-      const missing = join(dir, "missing.png")
-      expect((yield* channel.askApproval(request([missing])).pipe(Effect.flip)).message).toBe(
-        "Could not read missing.png",
-      )
-      expect(fake.calls.upload).toEqual([])
-      expect(fake.calls.post).toEqual([])
-    }).pipe(Effect.provide(fake.layer))
-  })
+  it.effect(
+    "refuses an image over 5 MB, one it cannot read, or one that is not an image, before posting",
+    () => {
+      const fake = makeFakeSlack()
+      return Effect.gen(function* () {
+        const dir = yield* tempDir
+        const big = yield* image(dir, "big.png", 5 * 1024 * 1024 + 1)
+        const channel = yield* Channel
+        expect((yield* channel.askApproval(request([big])).pipe(Effect.flip)).message).toBe(
+          "big.png is over 5 MB",
+        )
+        const missing = join(dir, "missing.png")
+        expect((yield* channel.askApproval(request([missing])).pipe(Effect.flip)).message).toBe(
+          "Could not read missing.png",
+        )
+        const secret = join(dir, "env")
+        yield* Effect.promise(() => writeFile(secret, "SLACK_BOT_TOKEN=x"))
+        const disguised = join(dir, "chart.png")
+        yield* Effect.promise(() => symlink(secret, disguised))
+        expect((yield* channel.askApproval(request([disguised])).pipe(Effect.flip)).message).toBe(
+          "chart.png is not a PNG, JPEG or GIF image",
+        )
+        expect(fake.calls.upload).toEqual([])
+        expect(fake.calls.post).toEqual([])
+      }).pipe(Effect.provide(fake.layer))
+    },
+  )
 
   it.effect("returns the request it already posted instead of posting a second one after a crash", () => {
     const fake = makeFakeSlack()

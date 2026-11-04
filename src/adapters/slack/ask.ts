@@ -17,6 +17,14 @@ export const CHANGE_INPUT = "text"
 const MARKDOWN_LIMIT = 12_000
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024
 
+const SIGNATURES = [
+  [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], // PNG
+  [0xff, 0xd8, 0xff], // JPEG
+  [0x47, 0x49, 0x46, 0x38], // GIF
+]
+const isImage = (file: Uint8Array) =>
+  SIGNATURES.some((signature) => signature.every((byte, index) => file[index] === byte))
+
 const Uploaded = Schema.Struct({
   files: Schema.Array(Schema.Struct({ files: Schema.Array(Schema.Struct({ id: Schema.NonEmptyString })) })),
 })
@@ -102,6 +110,15 @@ export const makeAskWriter = (
         Effect.filterOrFail(
           (file) => file.length <= MAX_IMAGE_BYTES,
           () => new ChannelError({ operation: "askApproval", message: `${basename(path)} is over 5 MB` }),
+        ),
+        // The content decides, not the name: a symlink or a copy named chart.png could be any file.
+        Effect.filterOrFail(
+          isImage,
+          () =>
+            new ChannelError({
+              operation: "askApproval",
+              message: `${basename(path)} is not a PNG, JPEG or GIF image`,
+            }),
         ),
         Effect.map((file) => ({ file, filename: basename(path) })),
       ),
