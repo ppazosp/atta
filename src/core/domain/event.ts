@@ -74,6 +74,33 @@ export const Event = Schema.TaggedUnion({
     decision: Schema.Literals(["approve", "reject"]),
     userId: Schema.NonEmptyString,
   },
+  /**
+   * A worker asked the user to approve what it plans to do (`ask_approval`), with Approve and Change buttons.
+   * Stored so the user's answer can find it; it is never routed.
+   */
+  WorkerAsked: {
+    id: EventId,
+    source: Schema.Literal("worker"),
+    externalId: Schema.NonEmptyString,
+    receivedAt: Timestamp,
+    workerId: WorkerId,
+    text: Schema.NonEmptyString,
+    /** Image files in the worker's worktree, shown under the text. */
+    images: Schema.Array(Schema.NonEmptyString),
+  },
+  /** Someone answered a worker's request: Approve, or Change with what to change. Only the trusted user counts. */
+  WorkerAnswer: {
+    id: EventId,
+    source: Schema.Literal("slack"),
+    /** `answer:<request ID>:<user ID>`, so only a user's first answer to a request is stored. */
+    externalId: Schema.NonEmptyString,
+    receivedAt: Timestamp,
+    askId: EventId,
+    decision: Schema.Literals(["approve", "change"]),
+    /** What to change; null for an approval. */
+    text: Schema.NullOr(Schema.String),
+    userId: Schema.NonEmptyString,
+  },
   /** The tracker saw a worker run end. */
   WorkerFinished: {
     id: EventId,

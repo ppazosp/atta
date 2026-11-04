@@ -18,6 +18,8 @@ export class WorkerUnavailable extends Schema.TaggedError<WorkerUnavailable>()("
 
 /** How a user's message to a worker begins, so the worker knows who wrote it and answers with `say`. */
 export const USER_MESSAGE = "The user wrote in your Slack thread:"
+/** How the user's answer to `ask_approval` begins. */
+export const USER_ANSWER = "The user answered your request for approval:"
 
 /** Appended to every brief. The rules here come from the proofs (a worker followed "use main" and committed there). */
 const briefFooter = (workerId: WorkerId) =>
@@ -34,6 +36,11 @@ const briefFooter = (workerId: WorkerId) =>
     `- The user can message you while you work. Their message starts with "${USER_MESSAGE}". Answer it with`,
     `  atta.say (worker_id "${workerId}") in a sentence or two, then carry on, following what they said. Use say only`,
     "  to talk to the user: your plan already shows your progress, and atta posts your final answer.",
+    "- When your instructions say to get the user's approval before you implement (a decision brief, laws, a",
+    `  design), call atta.ask_approval (worker_id "${workerId}") with the full text in Markdown and up to 4 images`,
+    "  (absolute paths of PNG, JPEG or GIF files in your worktree; render diagrams as PNG). It posts in your thread",
+    "  with Approve and Change buttons. Then end your run with a one-line final message saying you are waiting for",
+    `  approval. The user's answer starts your next run, beginning with "${USER_ANSWER}".`,
     "- Work on the branch created for you. Do not switch branches and do not commit to main.",
   ].join("\n")
 

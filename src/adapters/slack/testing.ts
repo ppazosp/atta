@@ -5,8 +5,10 @@ import type {
   ConversationsHistoryArguments,
   ConversationsOpenArguments,
   ConversationsRepliesArguments,
+  FilesUploadV2Arguments,
   ReactionsAddArguments,
   ReactionsRemoveArguments,
+  ViewsOpenArguments,
 } from "@slack/web-api"
 import type { AppOptions } from "@slack/bolt"
 import { Effect } from "effect"
@@ -50,6 +52,8 @@ export const makeFakeSlack = () => {
     ack: [] as Array<string>,
     add: [] as Array<ReactionsAddArguments>,
     remove: [] as Array<ReactionsRemoveArguments>,
+    upload: [] as Array<FilesUploadV2Arguments>,
+    views: [] as Array<ViewsOpenArguments>,
   }
   const responses = {
     post: async (): Promise<unknown> => ({ ok: true, ts: plan.ts }),
@@ -63,6 +67,8 @@ export const makeFakeSlack = () => {
     }),
     add: async (): Promise<unknown> => ({ ok: true }),
     remove: async (): Promise<unknown> => ({ ok: true }),
+    upload: async (): Promise<unknown> => ({ ok: true, files: [{ ok: true, files: [{ id: "F01" }] }] }),
+    views: async (): Promise<unknown> => ({ ok: true }),
     start: async (): Promise<unknown> => undefined,
   }
   const lifecycle = { started: 0, stopped: 0, options: undefined as AppOptions | undefined }
@@ -106,6 +112,18 @@ export const makeFakeSlack = () => {
         return responses.remove()
       },
     },
+    files: {
+      uploadV2: (input) => {
+        calls.upload.push(input)
+        return responses.upload()
+      },
+    },
+    views: {
+      open: (input) => {
+        calls.views.push(input)
+        return responses.views()
+      },
+    },
   }
   const layer = SlackChannelLayer(config, {
     client,
@@ -116,6 +134,9 @@ export const makeFakeSlack = () => {
           handlers.set(name, handler)
         },
         action: (name, handler) => {
+          actions.set(name, handler)
+        },
+        view: (name, handler) => {
           actions.set(name, handler)
         },
         error: (handler) => {

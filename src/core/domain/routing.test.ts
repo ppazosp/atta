@@ -176,4 +176,31 @@ describe("route", () => {
     expect(route(decision("U-TRUSTED"), ctx())).toEqual({ _tag: "Decide" })
     expect(route(decision("U-OTHER"), ctx())._tag).toBe("Drop")
   })
+
+  it("passes only the trusted user's answer to a worker's request, and only records the request", () => {
+    const answer = (userId: string): Event => ({
+      _tag: "WorkerAnswer",
+      id: EventId.make("a1"),
+      source: "slack",
+      externalId: `answer:ask1:${userId}`,
+      receivedAt: at,
+      askId: EventId.make("ask1"),
+      decision: "approve",
+      text: null,
+      userId,
+    })
+    expect(route(answer("U-TRUSTED"), ctx())).toEqual({ _tag: "Answer" })
+    expect(route(answer("U-OTHER"), ctx())).toEqual({ _tag: "Drop", reason: "untrusted_sender" })
+    const asked: Event = {
+      _tag: "WorkerAsked",
+      id: EventId.make("ask1"),
+      source: "worker",
+      externalId: "ask1",
+      receivedAt: at,
+      workerId: WorkerId.make("w1"),
+      text: "Approve?",
+      images: [],
+    }
+    expect(route(asked, ctx())).toEqual({ _tag: "Record" })
+  })
 })

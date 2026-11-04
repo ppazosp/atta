@@ -65,6 +65,9 @@ export class Intake extends Context.Service<
             yield* store.deliveries.record(event.id, "core", at)
             yield* store.deliveries.record(event.id, "router", at)
             break
+          case "Answer":
+            yield* store.deliveries.record(event.id, "core", at)
+            break
           case "ToWorker":
             yield* store.deliveries.record(event.id, `worker:${decided.workerId}`, at)
             break

@@ -5,8 +5,8 @@ import { AttaConfig } from "../src/core/domain/config.ts"
 import type { Event } from "../src/core/domain/event.ts"
 import { EventId, OperationId, Timestamp, type RuntimeRef, type WorkerId } from "../src/core/domain/ids.ts"
 import { parseThreadKey, threadKey } from "../src/core/domain/thread.ts"
-import { USER_MESSAGE } from "../src/core/Workers.ts"
-import { MAX_SAY } from "../src/core/WorkerApiLive.ts"
+import { USER_ANSWER, USER_MESSAGE } from "../src/core/Workers.ts"
+import { MAX_ASK, MAX_SAY } from "../src/core/WorkerApiLive.ts"
 import { Dispatch } from "../src/core/Dispatch.ts"
 import { Intake } from "../src/core/Intake.ts"
 import { Outbox } from "../src/core/Outbox.ts"
@@ -96,6 +96,23 @@ const decision = (proposalId: string, choice: "approve" | "reject", userId = ME)
   receivedAt: Timestamp.make(99),
   proposalId: EventId.make(proposalId),
   decision: choice,
+  userId,
+})
+
+const workerAnswer = (
+  askId: string,
+  choice: "approve" | "change",
+  text: string | null,
+  userId = ME,
+): Event => ({
+  _tag: "WorkerAnswer",
+  id: EventId.make(`slack:answer:${askId}:${choice}:${userId}`),
+  source: "slack",
+  externalId: `answer:${askId}:${userId}`,
+  receivedAt: Timestamp.make(99),
+  askId: EventId.make(askId),
+  decision: choice,
+  text,
   userId,
 })
 
@@ -471,6 +488,104 @@ describe("core flow", () => {
       yield* take(slack("stop"))
       const stopping = yield* api.say({ workerId, text: "Still here" }).pipe(Effect.flip)
       expect(stopping.message).toContain("not running")
+    }).pipe(Effect.provide(harness)),
+  )
+
+  it.effect("posts a worker's request for approval in its thread, with images from its worktree", () =>
+    Effect.gen(function* () {
+      const api = yield* WorkerApi
+      const store = yield* Store
+      const { workerId } = yield* startWorker
+      const fail = (images: ReadonlyArray<string>, text = "## Plan") =>
+        api.askApproval({ workerId, text, images }).pipe(
+          Effect.flip,
+          Effect.map((e) => e.message),
+        )
+      expect(yield* fail(["/work/chart.png"])).toContain("no worktree")
+      const worker = Option.getOrThrow(yield* store.workers.get(workerId))
+      yield* store.workers.update({ ...worker, worktreePath: "/work/w1" })
+      expect(yield* fail(["/work/w1/notes.txt"])).toContain("not a PNG")
+      expect(yield* fail(["/work/w1/../w2/chart.png"])).toContain("outside your worktree")
+      expect(yield* fail(["/home/me/.atta/env.png"])).toContain("outside your worktree")
+      expect(yield* fail(["chart.png"])).toContain("not an absolute path")
+      expect(yield* fail(Array.from({ length: 5 }, (_, i) => `/work/w1/${i}.png`))).toContain(
+        "up to 4 images",
+      )
+      expect(yield* fail([], "x".repeat(MAX_ASK + 1))).toContain(`up to ${MAX_ASK} characters`)
+      expect(yield* (yield* FakeChannelControl).calls).not.toContainEqual(
+        expect.objectContaining({ _tag: "askApproval" }),
+      )
+
+      yield* api.askApproval({ workerId, text: "## Plan\nOption A.", images: ["/work/w1/docs/chart.png"] })
+      const [asked] = yield* channelCalls("askApproval")
+      expect(asked).toMatchObject({ text: "## Plan\nOption A.", images: ["/work/w1/docs/chart.png"] })
+      const stored = Option.getOrThrow(yield* store.events.get(EventId.make(asked!.askId)))
+      expect(stored).toMatchObject({ _tag: "WorkerAsked", workerId, text: "## Plan\nOption A." })
+
+      yield* take(slack("stop"))
+      expect(yield* fail([])).toContain("not running")
+    }).pipe(Effect.provide(harness)),
+  )
+
+  it.effect("passes the user's Approve to the worker and closes the request", () =>
+    Effect.gen(function* () {
+      const runtime = yield* FakeRuntimeControl
+      const router = yield* FakeRouterControl
+      const { workerId, runtimeRef, runId } = yield* startWorker
+      yield* (yield* WorkerApi).askApproval({ workerId, text: "Use option A?", images: [] })
+      // The worker ends its run to wait for the answer.
+      yield* runtime.finishRun(runtimeRef, runId, { finalMessage: "Waiting for approval." })
+      yield* (yield* Tracker).poll(workerId)
+      const [asked] = yield* channelCalls("askApproval")
+      const before = (yield* router.submissions).length
+
+      expect(yield* take(workerAnswer(asked!.askId, "approve", null, "U-SOMEONE"))).toMatchObject({
+        _tag: "Drop",
+        reason: "untrusted_sender",
+      })
+      expect(yield* take(workerAnswer(asked!.askId, "approve", null))).toMatchObject({ _tag: "Answer" })
+      // A second answer from the user, by Change after Approve, is the same answer and is not stored again.
+      expect(yield* take(workerAnswer(asked!.askId, "change", "Use B"))).toBeNull()
+
+      const sends = (yield* runtime.calls).filter((c) => c._tag === "send")
+      expect(sends).toMatchObject([
+        { mode: "queue", text: `${USER_ANSWER} approved. Go ahead with what you proposed.` },
+      ])
+      expect(yield* channelCalls("closeAsk")).toMatchObject([
+        { ask: { message: asked!.message, files: [] }, text: "Use option A?", outcome: "Approved" },
+      ])
+      expect((yield* router.submissions).length).toBe(before)
+    }).pipe(Effect.provide(harness)),
+  )
+
+  it.effect("passes the user's Change, with what to change, to the running worker", () =>
+    Effect.gen(function* () {
+      const runtime = yield* FakeRuntimeControl
+      const { workerId } = yield* startWorker
+      yield* (yield* WorkerApi).askApproval({ workerId, text: "Use option A?", images: [] })
+      const [asked] = yield* channelCalls("askApproval")
+      yield* take(workerAnswer(asked!.askId, "change", "Use option B, and keep the API."))
+      const sends = (yield* runtime.calls).filter((c) => c._tag === "send")
+      expect(sends).toMatchObject([
+        {
+          mode: "steer",
+          text: `${USER_ANSWER} change it before you go ahead. What to change:\n\nUse option B, and keep the API.`,
+        },
+      ])
+      expect((yield* channelCalls("closeAsk"))[0]?.outcome).toBe(
+        "Changes asked: Use option B, and keep the API.",
+      )
+    }).pipe(Effect.provide(harness)),
+  )
+
+  it.effect("tells the user when the worker that asked is gone", () =>
+    Effect.gen(function* () {
+      const { workerId } = yield* startWorker
+      yield* (yield* WorkerApi).askApproval({ workerId, text: "Use option A?", images: [] })
+      const [asked] = yield* channelCalls("askApproval")
+      yield* take(slack("stop"))
+      yield* take(workerAnswer(asked!.askId, "approve", null))
+      expect((yield* channelCalls("closeAsk"))[0]?.outcome).toMatch(/^Not sent: /)
     }).pipe(Effect.provide(harness)),
   )
 

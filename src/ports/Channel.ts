@@ -20,6 +20,12 @@ export interface ReadMessage {
   readonly text: string
 }
 
+/** A worker's request as posted: the message, and the Slack files its images were uploaded as. */
+export interface AskMessage {
+  readonly message: MessageRef
+  readonly files: ReadonlyArray<string>
+}
+
 export interface PlanTask {
   readonly id: string
   readonly title: string
@@ -33,9 +39,12 @@ export class Channel extends Context.Service<
   {
     /**
      * DMs, mentions, replies in threads, and every message in channels atta is in (`via: "channel"`; core
-     * decides which channels it watches). Also the trusted user's clicks on proposals.
+     * decides which channels it watches). Also clicks on proposals, and answers to workers' requests.
      */
-    readonly events: Stream.Stream<Extract<Event, { _tag: "UserMessage" | "ApprovalDecision" }>, ChannelError>
+    readonly events: Stream.Stream<
+      Extract<Event, { _tag: "UserMessage" | "ApprovalDecision" | "WorkerAnswer" }>,
+      ChannelError
+    >
     /** Posts a message tagged with `operationId`. Returns the message; for a new thread it is the thread root. */
     reply(input: {
       readonly target: ReplyTarget
@@ -77,6 +86,25 @@ export class Channel extends Context.Service<
     closeApproval(input: {
       readonly message: MessageRef
       readonly text: string
+    }): Effect.Effect<void, ChannelError>
+    /**
+     * Posts a worker's request in its thread: the text as Markdown, its images under it, then Approve and Change
+     * buttons. Approve arrives as a `WorkerAnswer` event for `askId`; Change first asks what to change, in a form.
+     * Returns the message and the uploaded files, so the request can be shown again without its buttons.
+     */
+    askApproval(input: {
+      readonly thread: ThreadRef
+      readonly askId: string
+      readonly text: string
+      /** Paths of image files. */
+      readonly images: ReadonlyArray<string>
+      readonly operationId: OperationId
+    }): Effect.Effect<AskMessage, ChannelError>
+    /** Shows a request again with the outcome in place of its buttons, so it cannot be answered twice. */
+    closeAsk(input: {
+      readonly ask: AskMessage
+      readonly text: string
+      readonly outcome: string
     }): Effect.Effect<void, ChannelError>
     react(message: MessageRef, emoji: string): Effect.Effect<void, ChannelError>
     unreact(message: MessageRef, emoji: string): Effect.Effect<void, ChannelError>

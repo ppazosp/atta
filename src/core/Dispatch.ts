@@ -10,10 +10,13 @@ import { Outbox, Results } from "./Outbox.ts"
 import { now } from "./clock.ts"
 import { renderChannelBatch, renderEvent } from "./render.ts"
 import { Settings } from "./Settings.ts"
-import { USER_MESSAGE, Workers } from "./Workers.ts"
+import { USER_ANSWER, USER_MESSAGE, Workers } from "./Workers.ts"
 
 /** The outbox operation that sends the approval request for a proposal. */
 export const approvalOp = (proposalId: EventId) => OperationId.make(`approval:${proposalId}`)
+
+/** The outbox operation that posts a worker's request for approval; its result is the posted message. */
+export const askOp = (askId: EventId) => OperationId.make(`ask:${askId}`)
 
 /** The most watched-channel messages one channel turn reads. The rest wait for the next turn. */
 const MAX_BATCH = 50
@@ -171,6 +174,7 @@ export class Dispatch extends Context.Service<
        * second worker.
        */
       const decide = Effect.fn("Dispatch.decide")(function* (event: Event) {
+        if (event._tag === "WorkerAnswer") return yield* answer(event)
         if (event._tag !== "ApprovalDecision") return
         const proposal = yield* findProposal(event.proposalId)
         if (proposal === null) return yield* Effect.logWarning(`decision ${event.id} names no proposal`)
@@ -200,6 +204,41 @@ export class Dispatch extends Context.Service<
           .pipe(Effect.flatMap(Schema.decodeUnknownEffect(Results.approval_request)))
         const close = OperationId.make(`approval-close:${proposal.id}`)
         yield* store.transaction(outbox.enqueue(close, "approval_close", { message: request, text }))
+        yield* outbox.run(close)
+      })
+
+      /**
+       * The user's Approve or Change on a worker's request. The answer goes to the worker like a message from the
+       * user: a steer while it runs, a new run while it is idle. Then the request loses its buttons.
+       */
+      const answer = Effect.fn("Dispatch.answer")(function* (
+        event: Extract<Event, { _tag: "WorkerAnswer" }>,
+      ) {
+        const found = yield* store.events.get(event.askId)
+        if (Option.isNone(found) || found.value._tag !== "WorkerAsked") {
+          return yield* Effect.logWarning(`answer ${event.id} names no request`)
+        }
+        const ask = found.value
+        const change = event.text?.trim() ?? ""
+        const text =
+          event.decision === "approve"
+            ? `${USER_ANSWER} approved. Go ahead with what you proposed.`
+            : `${USER_ANSWER} change it before you go ahead. What to change:\n\n${change}`
+        let outcome = event.decision === "approve" ? "Approved" : `Changes asked: ${change}`
+        yield* workers
+          .message({ workerId: ask.workerId, text, operationId: OperationId.make(`answer:${event.id}`) })
+          .pipe(
+            Effect.catchTag("WorkerUnavailable", (error) =>
+              Effect.sync(() => {
+                outcome = `Not sent: ${error.message}`
+              }),
+            ),
+          )
+        const posted = yield* outbox
+          .run(askOp(ask.id))
+          .pipe(Effect.flatMap(Schema.decodeUnknownEffect(Results.ask_post)))
+        const close = OperationId.make(`ask-close:${ask.id}`)
+        yield* store.transaction(outbox.enqueue(close, "ask_close", { ask: posted, text: ask.text, outcome }))
         yield* outbox.run(close)
       })
 

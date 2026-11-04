@@ -1,10 +1,10 @@
 import { Context, Effect, Layer, Option, Queue, Ref, Stream } from "effect"
 import type { Event } from "../../src/core/domain/event.ts"
 import type { MessageRef } from "../../src/core/domain/thread.ts"
-import type { PlanTask, ReadMessage, ReplyTarget } from "../../src/ports/Channel.ts"
+import type { AskMessage, PlanTask, ReadMessage, ReplyTarget } from "../../src/ports/Channel.ts"
 import { Channel } from "../../src/ports/Channel.ts"
 
-type UserMessage = Extract<Event, { _tag: "UserMessage" | "ApprovalDecision" }>
+type UserMessage = Extract<Event, { _tag: "UserMessage" | "ApprovalDecision" | "WorkerAnswer" }>
 
 export type ChannelCall =
   | {
@@ -33,6 +33,20 @@ export type ChannelCall =
       readonly message: MessageRef
     }
   | { readonly _tag: "closeApproval"; readonly message: MessageRef; readonly text: string }
+  | {
+      readonly _tag: "askApproval"
+      readonly askId: string
+      readonly text: string
+      readonly images: ReadonlyArray<string>
+      readonly operationId: string
+      readonly message: MessageRef
+    }
+  | {
+      readonly _tag: "closeAsk"
+      readonly ask: AskMessage
+      readonly text: string
+      readonly outcome: string
+    }
   | {
       readonly _tag: "finishPlan"
       readonly plan: MessageRef
@@ -79,6 +93,7 @@ export const FakeChannelLayer = Layer.effectContext(
             for (const c of all) {
               if (c._tag === "reply" && c.operationId === operationId) return Option.some(c.message)
               if (c._tag === "upsertPlan" && c.operationId === operationId) return Option.some(c.plan)
+              if (c._tag === "askApproval" && c.operationId === operationId) return Option.some(c.message)
             }
             return Option.none()
           }),
@@ -103,6 +118,14 @@ export const FakeChannelLayer = Layer.effectContext(
           return message
         }),
       closeApproval: ({ message, text }) => record({ _tag: "closeApproval", message, text }),
+      askApproval: ({ thread, askId, text, images, operationId }) =>
+        Effect.gen(function* () {
+          const message = nextMessage(thread.team, thread.conversation)
+          yield* record({ _tag: "askApproval", askId, text, images, operationId, message })
+          // One uploaded file per image, as Slack would name it.
+          return { message, files: images.map((_, index) => `F${index}`) }
+        }),
+      closeAsk: ({ ask, text, outcome }) => record({ _tag: "closeAsk", ask, text, outcome }),
       react: (message, emoji) => record({ _tag: "react", message, emoji }),
       unreact: (message, emoji) => record({ _tag: "unreact", message, emoji }),
       upsertPlan: ({ thread, plan, title, tasks, operationId }) =>

@@ -46,6 +46,8 @@ export type OutboxKind =
   | "worker_stop"
   | "approval_request"
   | "approval_close"
+  | "ask_post"
+  | "ask_close"
 
 /** One action atta takes outside. Written before the action, marked done with its result after. */
 export interface OutboxEntry {

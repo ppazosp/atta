@@ -7,13 +7,18 @@ import { Channel, ChannelError } from "../../ports/Channel.ts"
 import { call, channelError, escapeMrkdwn, metadata, Ok, Posted } from "./api.ts"
 import type { SlackClient } from "./api.ts"
 import { makeApprovalWriter } from "./approval.ts"
-import { decodeAction, decodeEvent } from "./events.ts"
+import { ASK_APPROVE, ASK_CHANGE, CHANGE_FORM, changeForm, makeAskWriter } from "./ask.ts"
+import { decodeAction, decodeAnswer, decodeEvent } from "./events.ts"
 import { makePlanWriter, planContent } from "./plan.ts"
 
 interface SlackApp {
   event(name: "message" | "app_mention", handler: (args: { body: unknown }) => Promise<void>): void
   action(
-    name: "atta_approve" | "atta_reject",
+    name: "atta_approve" | "atta_reject" | typeof ASK_APPROVE | typeof ASK_CHANGE,
+    handler: (args: { body: unknown; ack: () => Promise<unknown> }) => Promise<void>,
+  ): void
+  view(
+    name: typeof CHANGE_FORM,
     handler: (args: { body: unknown; ack: () => Promise<unknown> }) => Promise<void>,
   ): void
   error(handler: (error: unknown) => Promise<void>): void
@@ -44,6 +49,11 @@ const read = (message: (typeof Messages.Type)["messages"][number]) => ({
   ts: message.ts,
   text: message.text ?? "",
 })
+/** A click on Change: what is needed to open the form. */
+const ChangeClick = Schema.Struct({
+  trigger_id: Schema.NonEmptyString,
+  actions: Schema.Tuple([Schema.Struct({ value: Schema.NonEmptyString })]),
+})
 const OperationMetadata = Schema.Struct({
   event_type: Schema.Literal("atta_operation"),
   event_payload: Schema.Struct({ operation_id: Schema.NonEmptyString }),
@@ -66,7 +76,11 @@ export const SlackChannelLayer = (
         ),
       )
       const inbox = yield* Queue.make<
-        { readonly kind: "event" | "action"; readonly payload: unknown; readonly receivedAt: number },
+        {
+          readonly kind: "event" | "action" | "answer"
+          readonly payload: unknown
+          readonly receivedAt: number
+        },
         ChannelError
       >()
       const clock = yield* Clock.Clock
@@ -103,6 +117,22 @@ export const SlackChannelLayer = (
       }
       app.action("atta_approve", receiveAction)
       app.action("atta_reject", receiveAction)
+      const receiveAnswer = async ({ body, ack }: { body: unknown; ack: () => Promise<unknown> }) => {
+        const receivedAt = clock.currentTimeMillisUnsafe()
+        await ack()
+        Queue.offerUnsafe(inbox, { kind: "answer", payload: body, receivedAt })
+      }
+      app.action(ASK_APPROVE, receiveAnswer)
+      app.view(CHANGE_FORM, receiveAnswer)
+      // Slack allows opening a form only within 3 seconds of the click, so it opens here, not through core.
+      app.action(ASK_CHANGE, async ({ body, ack }) => {
+        await ack()
+        const click = Schema.decodeUnknownOption(ChangeClick)(body)
+        if (Option.isNone(click)) return
+        await client.views
+          .open({ trigger_id: click.value.trigger_id, view: changeForm(click.value.actions[0].value) })
+          .catch(() => undefined)
+      })
       app.error(async (cause) => {
         Queue.failCauseUnsafe(inbox, Cause.fail(channelError("events", cause)))
       })
@@ -193,7 +223,9 @@ export const SlackChannelLayer = (
               ChannelError
             > = kind === "action"
               ? decodeAction(payload, receivedAt)
-              : decodeEvent(payload, options.botUserId, receivedAt)
+              : kind === "answer"
+                ? decodeAnswer(payload, receivedAt)
+                : decodeEvent(payload, options.botUserId, receivedAt)
             return decoded.pipe(
               Effect.catch((error) =>
                 Effect.logWarning("skipped a Slack event atta could not read", error).pipe(
@@ -206,6 +238,7 @@ export const SlackChannelLayer = (
           Stream.map((event) => event.value),
         ),
         ...approvals,
+        ...makeAskWriter(client, findReply),
         reply: Effect.fn("Slack.reply")(function* ({ target, text, operationId }) {
           // oxlint-disable unicorn/require-post-message-target-origin -- This is Slack's Web API.
           const result = yield* call(
