@@ -11,6 +11,7 @@ const ReplyTarget = Schema.Union([
   Schema.Struct({ thread: ThreadRef }),
   Schema.Struct({ conversation: Conversation }),
 ])
+const AskMessage = Schema.Struct({ message: MessageRef, files: Schema.Array(Schema.String) })
 const PlanTask = Schema.Struct({
   id: Schema.String,
   title: Schema.String,
@@ -49,6 +50,14 @@ const Payloads = {
     brief: Schema.String,
   }),
   approval_close: Schema.Struct({ message: MessageRef, text: Schema.String }),
+  ask_post: Schema.Struct({
+    thread: ThreadRef,
+    askId: Schema.String,
+    text: Schema.String,
+    images: Schema.Array(Schema.String),
+    worktree: Schema.NullOr(Schema.String),
+  }),
+  ask_close: Schema.Struct({ ask: AskMessage, text: Schema.String, outcome: Schema.String }),
 } satisfies Record<OutboxKind, Schema.Top>
 
 export type Payload<K extends OutboxKind> = (typeof Payloads)[K]["Type"]
@@ -68,6 +77,7 @@ export const Results = {
   }),
   worker_send: Schema.Struct({ runId: RunId }),
   approval_request: MessageRef,
+  ask_post: AskMessage,
 }
 
 const decode = <S extends Schema.Top>(schema: S, value: unknown, operation: string) =>
@@ -172,6 +182,15 @@ export class Outbox extends Context.Service<
           case "approval_close": {
             const p = yield* decode(Payloads.approval_close, entry.payload, "outbox.approval_close")
             return yield* channel.closeApproval(p).pipe(Effect.as(null))
+          }
+          case "ask_post": {
+            const p = yield* decode(Payloads.ask_post, entry.payload, "outbox.ask_post")
+            // The adapter finds a request it already posted by the operation ID, so a retry does not post twice.
+            return yield* channel.askApproval({ ...p, operationId: id })
+          }
+          case "ask_close": {
+            const p = yield* decode(Payloads.ask_close, entry.payload, "outbox.ask_close")
+            return yield* channel.closeAsk(p).pipe(Effect.as(null))
           }
           case "worker_stop": {
             const p = yield* decode(Payloads.worker_stop, entry.payload, "outbox.worker_stop")

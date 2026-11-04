@@ -5,8 +5,10 @@ import type {
   ConversationsHistoryArguments,
   ConversationsOpenArguments,
   ConversationsRepliesArguments,
+  FilesUploadV2Arguments,
   ReactionsAddArguments,
   ReactionsRemoveArguments,
+  ViewsOpenArguments,
 } from "@slack/web-api"
 import { Effect, Option, Schema } from "effect"
 import { ChannelError } from "../../ports/Channel.ts"
@@ -25,6 +27,12 @@ export interface SlackClient {
   readonly reactions: {
     add(input: ReactionsAddArguments): Promise<unknown>
     remove(input: ReactionsRemoveArguments): Promise<unknown>
+  }
+  readonly files: {
+    uploadV2(input: FilesUploadV2Arguments): Promise<unknown>
+  }
+  readonly views: {
+    open(input: ViewsOpenArguments): Promise<unknown>
   }
 }
 

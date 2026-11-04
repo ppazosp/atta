@@ -50,6 +50,8 @@ export const OutboxRow = Schema.Struct({
     "worker_stop",
     "approval_request",
     "approval_close",
+    "ask_post",
+    "ask_close",
   ]),
   payload: Json,
   status: Schema.Literals(["pending", "done", "failed"]),

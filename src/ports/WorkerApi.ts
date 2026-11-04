@@ -20,5 +20,14 @@ export class WorkerApi extends Context.Service<
     report(input: { readonly workerId: WorkerId; readonly text: string }): Effect.Effect<void, WorkerApiError>
     /** Posts `text` in the worker's own Slack thread, so it can answer the user while it works. */
     say(input: { readonly workerId: WorkerId; readonly text: string }): Effect.Effect<void, WorkerApiError>
+    /**
+     * Posts the worker's plan or decision in its thread, with its images and Approve and Change buttons. The
+     * user's answer reaches the worker as a message naming the request. Returns the request ID.
+     */
+    askApproval(input: {
+      readonly workerId: WorkerId
+      readonly text: string
+      readonly images: ReadonlyArray<string>
+    }): Effect.Effect<string, WorkerApiError>
   }
 >()("atta/ports/WorkerApi") {}

@@ -108,7 +108,7 @@ Each interface is an Effect service. WP0 writes them as code; the lists below sa
   - `recall(query)`
   - `remember(fact)`, which does nothing in v0
 - Store: one repository per table, and `transaction(effect)` so a group of writes lands together or not at all.
-- WorkerApi (used by atta's MCP server): `ask(workerId, question)`, `report(workerId, text)` and `say(workerId, text)`. Core implements it; WP7 exposes it.
+- WorkerApi (used by atta's MCP server): `ask(workerId, question)`, `report(workerId, text)`, `say(workerId, text)` and `askApproval(workerId, text, images)`. Core implements it; WP7 exposes it.
 
 ### Stored data
 
@@ -192,19 +192,21 @@ Each brief ends with a fixed footer:
 
 - your worker ID
 - use `atta.ask` when you need context
-- call `atta.report` when you are blocked and need a decision (atta sees by itself when you finish)
+- call `atta.report` when you are blocked on something only atta can give you (atta sees by itself when you finish); a decision or approval from you goes through `atta.ask_approval` instead
 - your messages start with "The user wrote in your Slack thread:"; answer each one briefly with `atta.say`, then carry on
+- when your instructions say to get approval before you implement, post the request with `atta.ask_approval`, then end your run; the answer starts your next run
 - work on the branch T3 created for you, and do not switch branches
 
 When a worker finishes, the tracker checks which branch it committed to. If it is not the worker's own branch, the tracker flags it in the thread.
 
 ### atta's MCP server
 
-It listens on `127.0.0.1` only. Workers can call three tools:
+It listens on `127.0.0.1` only. Workers can call four tools:
 
 - `ask(worker_id, question)` is answered from state and, later, memory. It is read-only
 - `report(worker_id, text)` becomes an event for the router
 - `say(worker_id, text)` posts a short message (up to 3,000 characters) in the worker's own thread. It is how a worker answers you while it works, so you can steer it. It cannot post anywhere else
+- `ask_approval(worker_id, text, images)` posts a plan or decision for your approval in the worker's own thread: the text as Markdown, up to 4 PNG, JPEG or GIF images (each at most 5 MB, inside the worker's worktree once symlinks are followed, and an image by its content), and Approve and Change buttons. A text too long for one Slack message is refused, never cut, so you only approve what you could read in full. The worker then ends its run. Approve, or Change and what to change in a form, goes straight to the worker and starts its next run; the router does not run. The answer names the request it answers, so a worker that asked again cannot mistake it for approval of its newer request. Only your answer counts, and only the first one. The request then shows the answer in place of its buttons. The text cannot ping anyone, and a link always shows its address (atta escapes every `[`, so Markdown links of any form stay text)
 
 v0 trusts the worker ID that the brief gives each worker. Real per-caller authentication comes when other agents use the server.
 

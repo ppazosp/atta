@@ -61,6 +61,11 @@ export const renderEvent = (
             : `The user started proposal ${event.proposalId}${where}: worker ${worker.id} runs it, and its steps show in the thread.`
       return [`[event ${event.id}] ${outcome}`, ...title].join("\n")
     }
+    // Neither reaches the router: a request is only recorded, and core passes the answer to the worker.
+    case "WorkerAsked":
+      return `[event ${event.id}] Worker ${event.workerId} asked the user to approve its plan.`
+    case "WorkerAnswer":
+      return `[event ${event.id}] The user answered worker request ${event.askId}: ${event.decision}.`
   }
 }
 

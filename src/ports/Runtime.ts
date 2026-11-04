@@ -27,6 +27,8 @@ export interface RunStatus {
   /** Where the worker's worktree is now, read from git, so a worker that switched branches is caught. */
   readonly currentBranch: string | null
   readonly headCommit: string | null
+  /** The worker's worktree. Like the branch, T3 reports it only once it exists, not at launch. */
+  readonly worktreePath: string | null
 }
 
 /** Where workers run (T3 Code in v0). */

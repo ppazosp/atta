@@ -5,6 +5,12 @@ export type WorkerApiCall =
   | { readonly _tag: "ask"; readonly workerId: string; readonly question: string }
   | { readonly _tag: "report"; readonly workerId: string; readonly text: string }
   | { readonly _tag: "say"; readonly workerId: string; readonly text: string }
+  | {
+      readonly _tag: "askApproval"
+      readonly workerId: string
+      readonly text: string
+      readonly images: ReadonlyArray<string>
+    }
 
 /** Answers every question with `answer`, and records calls. Workers whose ID starts with `unknown` are rejected. */
 export class FakeWorkerApiControl extends Context.Service<
@@ -36,6 +42,13 @@ export const makeFakeWorkerApiLayer = (answer: string) =>
         say: ({ workerId, text }) =>
           check(workerId).pipe(
             Effect.andThen(Ref.update(calls, (all) => [...all, { _tag: "say" as const, workerId, text }])),
+          ),
+        askApproval: ({ workerId, text, images }) =>
+          check(workerId).pipe(
+            Effect.andThen(
+              Ref.update(calls, (all) => [...all, { _tag: "askApproval" as const, workerId, text, images }]),
+            ),
+            Effect.as(`ask:${workerId}`),
           ),
       })
       return Context.make(WorkerApi, api).pipe(

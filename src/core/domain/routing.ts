@@ -14,7 +14,9 @@ export const Route = Schema.TaggedUnion({
   Observe: {},
   /** The trusted user decided on a proposal: core starts the work or drops it, then tells the router. */
   Decide: {},
-  /** Stored for reference only (a proposal). */
+  /** The trusted user answered a worker's request: core passes the answer to the worker, without the router. */
+  Answer: {},
+  /** Stored for reference only (a proposal, or a worker's request). */
   Record: {},
   /** Straight to the thread's worker, without the router: a steer while it runs, a new run while it is idle. */
   ToWorker: { workerId: WorkerId, mode: Schema.Literals(["steer", "queue"]) },
@@ -59,6 +61,7 @@ export const isStopCommand = (text: string) =>
  * - a request goes to the thread's worker when it is the only subscriber and is running or idle; otherwise to the
  *   router
  * - scheduled prompts, worker reports and finished runs always go to the router
+ * - the user's answer to a worker's request goes to that worker; anyone else's is dropped
  */
 export const route = (event: Event, context: RoutingContext): Route => {
   switch (event._tag) {
@@ -98,7 +101,12 @@ export const route = (event: Event, context: RoutingContext): Route => {
       return event.userId === context.trustedUserId
         ? Route.cases.Decide.make({})
         : Route.cases.Drop.make({ reason: "untrusted_sender" })
+    case "WorkerAnswer":
+      return event.userId === context.trustedUserId
+        ? Route.cases.Answer.make({})
+        : Route.cases.Drop.make({ reason: "untrusted_sender" })
     case "WorkProposed":
+    case "WorkerAsked":
       return Route.cases.Record.make({})
     case "ScheduledPrompt":
     case "WorkerReport":

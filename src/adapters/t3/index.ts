@@ -406,6 +406,7 @@ export const T3RuntimeLayer = (input: T3RuntimeConfig, options: Options = {}) =>
             outcome,
             finalMessage,
             assignedBranch,
+            worktreePath,
             ...git,
           }
         }),

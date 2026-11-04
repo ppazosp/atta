@@ -21,6 +21,11 @@ class McpServerError extends Schema.TaggedError<McpServerError>()("McpServerErro
 const AskInput = Schema.Struct({ worker_id: WorkerId, question: Schema.NonEmptyString })
 const ReportInput = Schema.Struct({ worker_id: WorkerId, text: Schema.NonEmptyString })
 const SayInput = ReportInput
+const AskApprovalInput = Schema.Struct({
+  worker_id: WorkerId,
+  text: Schema.NonEmptyString,
+  images: Schema.optionalKey(Schema.Array(Schema.NonEmptyString)),
+})
 
 const tools: Array<Tool> = [
   {
@@ -66,6 +71,29 @@ const tools: Array<Tool> = [
     },
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
   },
+  {
+    name: "ask_approval",
+    description:
+      "Ask the user to approve your plan or decision before you implement it. Posts the text (Markdown) and " +
+      "images in your Slack thread with Approve and Change buttons. End your run after calling it: the user's " +
+      "answer starts your next run.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        worker_id: { type: "string", minLength: 1 },
+        text: { type: "string", minLength: 1, description: "The full request, in Markdown." },
+        images: {
+          type: "array",
+          maxItems: 4,
+          items: { type: "string", minLength: 1 },
+          description: "Absolute paths of PNG, JPEG or GIF files in your worktree, shown under the text.",
+        },
+      },
+      required: ["worker_id", "text"],
+      additionalProperties: false,
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
+  },
 ]
 
 const toolNames = new Set(tools.map((tool) => tool.name))
@@ -88,6 +116,19 @@ export const McpServerLayer = Layer.effectDiscard(
         if (name === "ask") {
           const args = yield* Schema.decodeUnknownEffect(AskInput)(input, { onExcessProperty: "error" })
           return textResult(yield* api.ask({ workerId: args.worker_id, question: args.question }))
+        }
+        if (name === "ask_approval") {
+          const args = yield* Schema.decodeUnknownEffect(AskApprovalInput)(input, {
+            onExcessProperty: "error",
+          })
+          const askId = yield* api.askApproval({
+            workerId: args.worker_id,
+            text: args.text,
+            images: args.images ?? [],
+          })
+          return textResult(
+            `Posted request ${askId} in your thread. End your run now: the user's answer starts your next one.`,
+          )
         }
         if (name === "say") {
           const args = yield* Schema.decodeUnknownEffect(SayInput)(input, { onExcessProperty: "error" })

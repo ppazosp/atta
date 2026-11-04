@@ -35,6 +35,7 @@ const newRun = (worker: RuntimeRef, n: number): RunStatus => ({
   assignedBranch: branchOf(worker),
   currentBranch: branchOf(worker),
   headCommit: null,
+  worktreePath: `/worktrees/${worker}`,
 })
 
 /**

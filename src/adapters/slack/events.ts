@@ -2,6 +2,7 @@ import { Effect, Option, Schema } from "effect"
 import { EventId, Timestamp } from "../../core/domain/ids.ts"
 import type { Event } from "../../core/domain/event.ts"
 import { ChannelError } from "../../ports/Channel.ts"
+import { ASK_APPROVE, CHANGE_BLOCK, CHANGE_FORM, CHANGE_INPUT } from "./ask.ts"
 
 const Envelope = Schema.Struct({
   type: Schema.Literal("event_callback"),
@@ -95,5 +96,63 @@ export const decodeAction = Effect.fn("Slack.decodeAction")(function* (
     proposalId: action.value,
     decision: action.action_id === "atta_approve" ? "approve" : "reject",
     userId: body.user.id,
+  })
+})
+
+const Approve = Schema.Struct({
+  type: Schema.Literal("block_actions"),
+  user: Schema.Struct({ id: Schema.NonEmptyString }),
+  actions: Schema.Tuple([
+    Schema.Struct({
+      type: Schema.Literal("button"),
+      action_id: Schema.Literal(ASK_APPROVE),
+      action_ts: Schema.NonEmptyString,
+      value: EventId,
+    }),
+  ]),
+})
+const ChangeSubmitted = Schema.Struct({
+  type: Schema.Literal("view_submission"),
+  user: Schema.Struct({ id: Schema.NonEmptyString }),
+  view: Schema.Struct({
+    id: Schema.NonEmptyString,
+    callback_id: Schema.Literal(CHANGE_FORM),
+    private_metadata: EventId,
+    state: Schema.Struct({
+      values: Schema.Struct({
+        [CHANGE_BLOCK]: Schema.Struct({
+          [CHANGE_INPUT]: Schema.Struct({ value: Schema.NullOr(Schema.String) }),
+        }),
+      }),
+    }),
+  }),
+})
+
+/** Approve on a worker's request, or the Change form sent. Either answers the request. */
+export const decodeAnswer = Effect.fn("Slack.decodeAnswer")(function* (
+  payload: unknown,
+  receivedAt: number,
+): Effect.fn.Return<Option.Option<Extract<Event, { _tag: "WorkerAnswer" }>>, ChannelError> {
+  const answer = yield* decode(Schema.Union([Approve, ChangeSubmitted]), payload)
+  const [askId, decision, text, at] =
+    answer.type === "block_actions"
+      ? ([answer.actions[0].value, "approve", null, answer.actions[0].action_ts] as const)
+      : ([
+          answer.view.private_metadata,
+          "change",
+          answer.view.state.values[CHANGE_BLOCK][CHANGE_INPUT].value ?? "",
+          answer.view.id,
+        ] as const)
+  return Option.some({
+    _tag: "WorkerAnswer",
+    id: EventId.make(`slack:answer:${askId}:${at}`),
+    source: "slack",
+    // Per user, so only the first answer counts, and someone else's, which core drops, cannot use up the owner's.
+    externalId: `answer:${askId}:${answer.user.id}`,
+    receivedAt: Timestamp.make(receivedAt),
+    askId,
+    decision,
+    text,
+    userId: answer.user.id,
   })
 })
