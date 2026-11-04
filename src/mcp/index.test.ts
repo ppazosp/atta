@@ -191,7 +191,7 @@ describe("worker MCP server", () => {
         content: [
           {
             type: "text",
-            text: "Posted in your thread. End your run now: the user's answer starts your next one.",
+            text: "Posted request ask:worker-1 in your thread. End your run now: the user's answer starts your next one.",
           },
         ],
       })
@@ -199,7 +199,7 @@ describe("worker MCP server", () => {
         content: [
           {
             type: "text",
-            text: "Posted in your thread. End your run now: the user's answer starts your next one.",
+            text: "Posted request ask:worker-1 in your thread. End your run now: the user's answer starts your next one.",
           },
         ],
       })
@@ -414,7 +414,7 @@ describe("worker MCP server", () => {
               ),
             report: () => Effect.void,
             say: () => Effect.void,
-            askApproval: () => Effect.void,
+            askApproval: () => Effect.succeed("ask:worker-1"),
           }),
         ),
       )

@@ -6,7 +6,7 @@ import type { Event } from "../src/core/domain/event.ts"
 import { EventId, OperationId, Timestamp, type RuntimeRef, type WorkerId } from "../src/core/domain/ids.ts"
 import { parseThreadKey, threadKey } from "../src/core/domain/thread.ts"
 import { USER_ANSWER, USER_MESSAGE } from "../src/core/Workers.ts"
-import { MAX_ASK, MAX_SAY } from "../src/core/WorkerApiLive.ts"
+import { MAX_SAY } from "../src/core/WorkerApiLive.ts"
 import { Dispatch } from "../src/core/Dispatch.ts"
 import { Intake } from "../src/core/Intake.ts"
 import { Outbox } from "../src/core/Outbox.ts"
@@ -511,13 +511,18 @@ describe("core flow", () => {
       expect(yield* fail(Array.from({ length: 5 }, (_, i) => `/work/w1/${i}.png`))).toContain(
         "up to 4 images",
       )
-      expect(yield* fail([], "x".repeat(MAX_ASK + 1))).toContain(`up to ${MAX_ASK} characters`)
+      expect(yield* fail([], "x".repeat(12_001))).toContain("too long for one Slack message")
       expect(yield* (yield* FakeChannelControl).calls).not.toContainEqual(
         expect.objectContaining({ _tag: "askApproval" }),
       )
 
-      yield* api.askApproval({ workerId, text: "## Plan\nOption A.", images: ["/work/w1/docs/chart.png"] })
+      const askId = yield* api.askApproval({
+        workerId,
+        text: "## Plan\nOption A.",
+        images: ["/work/w1/docs/chart.png"],
+      })
       const [asked] = yield* channelCalls("askApproval")
+      expect(asked?.askId).toBe(askId)
       expect(asked).toMatchObject({ text: "## Plan\nOption A.", images: ["/work/w1/docs/chart.png"] })
       const stored = Option.getOrThrow(yield* store.events.get(EventId.make(asked!.askId)))
       expect(stored).toMatchObject({ _tag: "WorkerAsked", workerId, text: "## Plan\nOption A." })
@@ -549,7 +554,10 @@ describe("core flow", () => {
 
       const sends = (yield* runtime.calls).filter((c) => c._tag === "send")
       expect(sends).toMatchObject([
-        { mode: "queue", text: `${USER_ANSWER} approved. Go ahead with what you proposed.` },
+        {
+          mode: "queue",
+          text: `${USER_ANSWER} request ${asked!.askId} ("Use option A?") is approved. Go ahead with exactly that request.`,
+        },
       ])
       expect(yield* channelCalls("closeAsk")).toMatchObject([
         { ask: { message: asked!.message, files: [] }, text: "Use option A?", outcome: "Approved" },
@@ -562,14 +570,14 @@ describe("core flow", () => {
     Effect.gen(function* () {
       const runtime = yield* FakeRuntimeControl
       const { workerId } = yield* startWorker
-      yield* (yield* WorkerApi).askApproval({ workerId, text: "Use option A?", images: [] })
+      yield* (yield* WorkerApi).askApproval({ workerId, text: "## Plan: option A\nDetails.", images: [] })
       const [asked] = yield* channelCalls("askApproval")
       yield* take(workerAnswer(asked!.askId, "change", "Use option B, and keep the API."))
       const sends = (yield* runtime.calls).filter((c) => c._tag === "send")
       expect(sends).toMatchObject([
         {
           mode: "steer",
-          text: `${USER_ANSWER} change it before you go ahead. What to change:\n\nUse option B, and keep the API.`,
+          text: `${USER_ANSWER} request ${asked!.askId} ("Plan: option A") needs changes before you go ahead. What to change:\n\nUse option B, and keep the API.`,
         },
       ])
       expect((yield* channelCalls("closeAsk"))[0]?.outcome).toBe(

@@ -125,6 +125,8 @@ export const FakeChannelLayer = Layer.effectContext(
           // One uploaded file per image, as Slack would name it.
           return { message, files: images.map((_, index) => `F${index}`) }
         }),
+      // Slack's limit, without the adapter's escaping.
+      askFits: (text) => text.length <= 12_000,
       closeAsk: ({ ask, text, outcome }) => record({ _tag: "closeAsk", ask, text, outcome }),
       react: (message, emoji) => record({ _tag: "react", message, emoji }),
       unreact: (message, emoji) => record({ _tag: "unreact", message, emoji }),

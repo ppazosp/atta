@@ -18,6 +18,13 @@ export const approvalOp = (proposalId: EventId) => OperationId.make(`approval:${
 /** The outbox operation that posts a worker's request for approval; its result is the posted message. */
 export const askOp = (askId: EventId) => OperationId.make(`ask:${askId}`)
 
+/** A request's first line, without Markdown heading marks, to name it in the answer. */
+const headline = (text: string) =>
+  (text.split("\n").find((line) => line.trim() !== "") ?? "")
+    .replace(/^#+\s*/, "")
+    .trim()
+    .slice(0, 80)
+
 /** The most watched-channel messages one channel turn reads. The rest wait for the next turn. */
 const MAX_BATCH = 50
 
@@ -220,10 +227,12 @@ export class Dispatch extends Context.Service<
         }
         const ask = found.value
         const change = event.text?.trim() ?? ""
+        // Named, so a worker that asked again since cannot take this answer for its newer request.
+        const request = `request ${ask.id} ("${headline(ask.text)}")`
         const text =
           event.decision === "approve"
-            ? `${USER_ANSWER} approved. Go ahead with what you proposed.`
-            : `${USER_ANSWER} change it before you go ahead. What to change:\n\n${change}`
+            ? `${USER_ANSWER} ${request} is approved. Go ahead with exactly that request.`
+            : `${USER_ANSWER} ${request} needs changes before you go ahead. What to change:\n\n${change}`
         let outcome = event.decision === "approve" ? "Approved" : `Changes asked: ${change}`
         yield* workers
           .message({ workerId: ask.workerId, text, operationId: OperationId.make(`answer:${event.id}`) })

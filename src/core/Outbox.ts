@@ -55,6 +55,7 @@ const Payloads = {
     askId: Schema.String,
     text: Schema.String,
     images: Schema.Array(Schema.String),
+    worktree: Schema.NullOr(Schema.String),
   }),
   ask_close: Schema.Struct({ ask: AskMessage, text: Schema.String, outcome: Schema.String }),
 } satisfies Record<OutboxKind, Schema.Top>

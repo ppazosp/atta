@@ -22,12 +22,12 @@ export class WorkerApi extends Context.Service<
     say(input: { readonly workerId: WorkerId; readonly text: string }): Effect.Effect<void, WorkerApiError>
     /**
      * Posts the worker's plan or decision in its thread, with its images and Approve and Change buttons. The
-     * user's answer reaches the worker as a message.
+     * user's answer reaches the worker as a message naming the request. Returns the request ID.
      */
     askApproval(input: {
       readonly workerId: WorkerId
       readonly text: string
       readonly images: ReadonlyArray<string>
-    }): Effect.Effect<void, WorkerApiError>
+    }): Effect.Effect<string, WorkerApiError>
   }
 >()("atta/ports/WorkerApi") {}

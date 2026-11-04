@@ -121,9 +121,13 @@ export const McpServerLayer = Layer.effectDiscard(
           const args = yield* Schema.decodeUnknownEffect(AskApprovalInput)(input, {
             onExcessProperty: "error",
           })
-          yield* api.askApproval({ workerId: args.worker_id, text: args.text, images: args.images ?? [] })
+          const askId = yield* api.askApproval({
+            workerId: args.worker_id,
+            text: args.text,
+            images: args.images ?? [],
+          })
           return textResult(
-            "Posted in your thread. End your run now: the user's answer starts your next one.",
+            `Posted request ${askId} in your thread. End your run now: the user's answer starts your next one.`,
           )
         }
         if (name === "say") {

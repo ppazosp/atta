@@ -96,10 +96,13 @@ export class Channel extends Context.Service<
       readonly thread: ThreadRef
       readonly askId: string
       readonly text: string
-      /** Paths of image files. */
+      /** Paths of image files. Each must be inside `worktree` once symlinks are followed. */
       readonly images: ReadonlyArray<string>
+      readonly worktree: string | null
       readonly operationId: OperationId
     }): Effect.Effect<AskMessage, ChannelError>
+    /** Whether a request's text fits one Slack message once the adapter has made it safe to post. */
+    askFits(text: string): boolean
     /** Shows a request again with the outcome in place of its buttons, so it cannot be answered twice. */
     closeAsk(input: {
       readonly ask: AskMessage

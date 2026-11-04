@@ -48,6 +48,7 @@ export const makeFakeWorkerApiLayer = (answer: string) =>
             Effect.andThen(
               Ref.update(calls, (all) => [...all, { _tag: "askApproval" as const, workerId, text, images }]),
             ),
+            Effect.as(`ask:${workerId}`),
           ),
       })
       return Context.make(WorkerApi, api).pipe(

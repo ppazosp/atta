@@ -2,6 +2,7 @@ import { isAbsolute, relative } from "node:path"
 import { Effect, Layer, Option } from "effect"
 import { EventId, OperationId, type WorkerId } from "./domain/ids.ts"
 import { parseThreadKey } from "./domain/thread.ts"
+import { Channel } from "../ports/Channel.ts"
 import { Memory } from "../ports/Memory.ts"
 import { Store } from "../ports/Store.ts"
 import { WorkerApi, WorkerApiError } from "../ports/WorkerApi.ts"
@@ -12,8 +13,6 @@ import { Outbox } from "./Outbox.ts"
 
 /** The longest message a worker may post. Its full result goes through the router; `say` is for short answers. */
 export const MAX_SAY = 3000
-/** Slack refuses a Markdown message over 12,000 characters, and escaping can lengthen the text. */
-export const MAX_ASK = 10_000
 const MAX_IMAGES = 4
 const IMAGE = /\.(png|jpe?g|gif)$/i
 
@@ -25,7 +24,7 @@ const imageProblem = (path: string, worktree: string | null): string | null => {
   if (worktree === null) return "this worker has no worktree to attach images from"
   if (!isAbsolute(path)) return `${path} is not an absolute path`
   const inside = relative(worktree, path)
-  // Images are the worker's own work, so they come from its worktree.
+  // Images are the worker's own work, so they come from its worktree. The adapter checks again after symlinks.
   if (inside === "" || inside.startsWith("..") || isAbsolute(inside))
     return `${path} is outside your worktree`
   return null
@@ -40,6 +39,7 @@ export const WorkerApiLive = Layer.effect(
     const intake = yield* Intake
     const dispatch = yield* Dispatch
     const outbox = yield* Outbox
+    const channel = yield* Channel
 
     const known = (workerId: WorkerId) =>
       store.workers.get(workerId).pipe(
@@ -113,9 +113,9 @@ export const WorkerApiLive = Layer.effect(
       askApproval: ({ workerId, text, images }) =>
         Effect.gen(function* () {
           if (text.trim() === "") return yield* fail("the request has no text")
-          if (text.length > MAX_ASK) {
-            return yield* fail(`a request has up to ${MAX_ASK} characters; this one has ${text.length}`)
-          }
+          // Refused rather than cut, so the user never approves a request they could not read in full.
+          if (!channel.askFits(text))
+            return yield* fail("the request is too long for one Slack message; shorten it")
           if (images.length > MAX_IMAGES) return yield* fail(`a request has up to ${MAX_IMAGES} images`)
           const worker = yield* known(workerId)
           if (worker.state !== "running") return yield* fail(`${workerId} is ${worker.state}, not running`)
@@ -146,6 +146,7 @@ export const WorkerApiLive = Layer.effect(
                   askId,
                   text,
                   images,
+                  worktree: worker.worktreePath,
                 })
               }),
             )
@@ -153,6 +154,7 @@ export const WorkerApiLive = Layer.effect(
               Effect.andThen(outbox.run(operationId)),
               Effect.mapError((e) => fail(e.message)),
             )
+          return askId
         }),
     })
   }),

@@ -1,5 +1,5 @@
-import { readFile } from "node:fs/promises"
-import { basename } from "node:path"
+import { open, realpath } from "node:fs/promises"
+import { basename, isAbsolute, relative } from "node:path"
 import { Effect, Option, Schedule, Schema } from "effect"
 import type { AskMessage, Channel } from "../../ports/Channel.ts"
 import { ChannelError } from "../../ports/Channel.ts"
@@ -34,13 +34,62 @@ const Uploaded = Schema.Struct({
  * backslash before every `[` stops inline and reference links, so only bare addresses link, and they show
  * themselves. All measured in Slack on 4 November 2026.
  */
-export const askMarkdown = (text: string) => {
-  // Backslashes first, so a worker's own `\[` cannot cancel atta's escape.
-  const safe = escapeMrkdwn(text).replaceAll("\\", "\\\\").replaceAll("[", "\\[")
-  return safe.length > MARKDOWN_LIMIT
-    ? `${safe.slice(0, MARKDOWN_LIMIT - 40)}\n\n(cut at Slack's limit)`
-    : safe
-}
+export const askMarkdown = (text: string) =>
+  // Backslashes first, so a worker's own `\\[` cannot cancel atta's escape.
+  escapeMrkdwn(text).replaceAll("\\", "\\\\").replaceAll("[", "\\[")
+
+/** A request that does not fit is refused, never cut: the user approves only what they could read in full. */
+export const askFits = (text: string) => askMarkdown(text).length <= MARKDOWN_LIMIT
+
+const refuse = (message: string) => new ChannelError({ operation: "askApproval", message })
+
+/**
+ * Reads one image of a request: inside the worker's worktree once symlinks are followed, a regular file, at most
+ * 5 MB (never reading more), and an image by its content, since a file named chart.png could be anything.
+ */
+const readImage = Effect.fn("Slack.readImage")(function* (path: string, worktree: string | null) {
+  const name = basename(path)
+  if (worktree === null) return yield* refuse("this worker has no worktree to attach images from")
+  const [root, real] = yield* Effect.tryPromise({
+    try: () => Promise.all([realpath(worktree), realpath(path)]),
+    catch: () => refuse(`Could not read ${name}`),
+  })
+  const inside = relative(root, real)
+  if (inside === "" || inside.startsWith("..") || isAbsolute(inside)) {
+    return yield* refuse(`${name} is outside your worktree`)
+  }
+  const file = yield* Effect.acquireUseRelease(
+    Effect.tryPromise({ try: () => open(real, "r"), catch: () => refuse(`Could not read ${name}`) }),
+    (handle) =>
+      Effect.gen(function* () {
+        const stat = yield* Effect.tryPromise({
+          try: () => handle.stat(),
+          catch: () => refuse(`Could not read ${name}`),
+        })
+        if (!stat.isFile()) return yield* refuse(`${name} is not a file`)
+        const buffer = Buffer.alloc(MAX_IMAGE_BYTES + 1)
+        const { bytesRead } = yield* Effect.tryPromise({
+          try: () => handle.read(buffer, 0, buffer.length, 0),
+          catch: () => refuse(`Could not read ${name}`),
+        })
+        if (bytesRead > MAX_IMAGE_BYTES) return yield* refuse(`${name} is over 5 MB`)
+        return buffer.subarray(0, bytesRead)
+      }),
+    (handle) => Effect.promise(() => handle.close()),
+  )
+  if (!isImage(file)) return yield* refuse(`${name} is not a PNG, JPEG or GIF image`)
+  return { file, filename: name }
+})
+
+const Thread = Schema.Struct({
+  messages: Schema.Array(
+    Schema.Struct({ ts: Schema.String, blocks: Schema.optionalKey(Schema.Array(Schema.Unknown)) }),
+  ),
+})
+const ImageBlock = Schema.Struct({
+  type: Schema.Literal("image"),
+  slack_file: Schema.Struct({ id: Schema.NonEmptyString }),
+})
 
 type Block = Record<string, unknown>
 
@@ -98,33 +147,42 @@ export const changeForm = (askId: string) => ({
 export const makeAskWriter = (
   client: SlackClient,
   findReply: Channel["Service"]["findReply"],
-): Pick<Channel["Service"], "askApproval" | "closeAsk"> => ({
-  askApproval: Effect.fn("Slack.askApproval")(function* ({ thread, askId, text, images, operationId }) {
-    // A retry after a crash finds the request it already posted. Its images then stay off the closed request.
+): Pick<Channel["Service"], "askApproval" | "askFits" | "closeAsk"> => ({
+  askFits,
+  askApproval: Effect.fn("Slack.askApproval")(function* ({
+    thread,
+    askId,
+    text,
+    images,
+    worktree,
+    operationId,
+  }) {
+    if (!askFits(text)) return yield* refuse("The request is too long for one Slack message")
+    // A retry after a crash finds the request it already posted, and its images by their file IDs in its blocks.
     const sent = yield* findReply({ target: { thread }, operationId })
-    if (Option.isSome(sent)) return { message: sent.value, files: [] } satisfies AskMessage
-    const uploads = yield* Effect.forEach(images, (path) =>
-      Effect.tryPromise({
-        try: () => readFile(path),
-        catch: () =>
-          new ChannelError({ operation: "askApproval", message: `Could not read ${basename(path)}` }),
-      }).pipe(
-        Effect.filterOrFail(
-          (file) => file.length <= MAX_IMAGE_BYTES,
-          () => new ChannelError({ operation: "askApproval", message: `${basename(path)} is over 5 MB` }),
-        ),
-        // The content decides, not the name: a symlink or a copy named chart.png could be any file.
-        Effect.filterOrFail(
-          isImage,
-          () =>
-            new ChannelError({
-              operation: "askApproval",
-              message: `${basename(path)} is not a PNG, JPEG or GIF image`,
-            }),
-        ),
-        Effect.map((file) => ({ file, filename: basename(path) })),
-      ),
-    )
+    if (Option.isSome(sent)) {
+      const read = yield* call(
+        "conversations.replies",
+        () =>
+          client.conversations.replies({
+            channel: thread.conversation,
+            ts: thread.rootTs,
+            oldest: sent.value.ts,
+            latest: sent.value.ts,
+            inclusive: true,
+          }),
+        Thread,
+      )
+      const blocks = read.messages.find((message) => message.ts === sent.value.ts)?.blocks ?? []
+      const files = blocks.flatMap((block) =>
+        Option.match(Schema.decodeUnknownOption(ImageBlock)(block), {
+          onNone: () => [],
+          onSome: (image) => [image.slack_file.id],
+        }),
+      )
+      return { message: sent.value, files } satisfies AskMessage
+    }
+    const uploads = yield* Effect.forEach(images, (path) => readImage(path, worktree))
     // Uploaded without a channel, so the images show only inside the request message.
     const files =
       uploads.length === 0

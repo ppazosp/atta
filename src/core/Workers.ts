@@ -40,7 +40,8 @@ const briefFooter = (workerId: WorkerId) =>
     `  design), call atta.ask_approval (worker_id "${workerId}") with the full text in Markdown and up to 4 images`,
     "  (absolute paths of PNG, JPEG or GIF files in your worktree; render diagrams as PNG). It posts in your thread",
     "  with Approve and Change buttons. Then end your run with a one-line final message saying you are waiting for",
-    `  approval. The user's answer starts your next run, beginning with "${USER_ANSWER}".`,
+    `  approval. The user's answer starts your next run, beginning with "${USER_ANSWER}" and naming the request`,
+    "  it answers. If you asked again since, act only on the answer to your latest request.",
     "- Work on the branch created for you. Do not switch branches and do not commit to main.",
   ].join("\n")
 
