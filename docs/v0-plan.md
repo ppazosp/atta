@@ -192,7 +192,7 @@ Each brief ends with a fixed footer:
 
 - your worker ID
 - use `atta.ask` when you need context
-- call `atta.report` when you are blocked and need a decision (atta sees by itself when you finish)
+- call `atta.report` when you are blocked on something only atta can give you (atta sees by itself when you finish); a decision or approval from you goes through `atta.ask_approval` instead
 - your messages start with "The user wrote in your Slack thread:"; answer each one briefly with `atta.say`, then carry on
 - when your instructions say to get approval before you implement, post the request with `atta.ask_approval`, then end your run; the answer starts your next run
 - work on the branch T3 created for you, and do not switch branches
