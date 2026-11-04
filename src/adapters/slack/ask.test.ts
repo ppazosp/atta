@@ -43,7 +43,10 @@ const tempDir = Effect.promise(() => mkdtemp(join(tmpdir(), "atta-ask-")))
 describe("Slack worker requests", () => {
   it("keeps a worker's Markdown from pinging anyone or hiding a link", () => {
     expect(askMarkdown("Hi <!channel> <@U01> & [docs](https://evil.example)")).toBe(
-      "Hi &lt;!channel&gt; &lt;@U01&gt; &amp; [docs] (https://evil.example)",
+      "Hi &lt;!channel&gt; &lt;@U01&gt; &amp; \\[docs](https://evil.example)",
+    )
+    expect(askMarkdown("[click][r]\n\n[r]: https://evil.example")).toBe(
+      "\\[click]\\[r]\n\n\\[r]: https://evil.example",
     )
     const long = askMarkdown("<".repeat(5000))
     expect(long.length).toBeLessThanOrEqual(12_000)

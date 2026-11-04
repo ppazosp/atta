@@ -30,11 +30,12 @@ const Uploaded = Schema.Struct({
 })
 
 /**
- * A worker's text as Markdown that cannot ping anyone or hide a link. Escaped `<`, `>` and `&` show as text, and
- * `](` is broken up, so a link shows its address. Both measured in Slack on 4 November 2026.
+ * A worker's text as Markdown that cannot ping anyone or hide a link. Escaped `<`, `>` and `&` show as text, and a
+ * backslash before every `[` stops inline and reference links, so only bare addresses link, and they show
+ * themselves. All measured in Slack on 4 November 2026.
  */
 export const askMarkdown = (text: string) => {
-  const safe = escapeMrkdwn(text).replaceAll("](", "] (")
+  const safe = escapeMrkdwn(text).replaceAll("[", "\\[")
   return safe.length > MARKDOWN_LIMIT
     ? `${safe.slice(0, MARKDOWN_LIMIT - 40)}\n\n(cut at Slack's limit)`
     : safe
